@@ -105,7 +105,8 @@ Public Sub GenerarReporteSemanal()
 
     For r = g_Config("INICIO_FILA_EMPLEADOS") To baseUltFila
         noNomRaw = CStr(wsBase.Cells(r, g_Config("BASE_COL_NOMINA")).Value)
-        nombreEmp = CStr(wsBase.Cells(r, g_Config("BASE_COL_NOMBRE")).Value)
+        nombreEmp = Trim(CStr(wsBase.Cells(r, g_Config("BASE_COL_NOMBRE")).Value))
+        
         If Len(Trim$(noNomRaw)) = 0 And Len(Trim$(nombreEmp)) = 0 Then GoTo siguienteEmpleado
         noNomKey = NomKey(noNomRaw)
 
@@ -123,10 +124,7 @@ Public Sub GenerarReporteSemanal()
         If incentivoBase > 0 Then wsRep.Cells(repFila, g_Config("COL_INCENT")).Value = incentivoBase Else wsRep.Cells(repFila, g_Config("COL_INCENT")).ClearContents
         If bonoBase > 0 Then wsRep.Cells(repFila, g_Config("COL_BONO")).Value = bonoBase Else wsRep.Cells(repFila, g_Config("COL_BONO")).ClearContents
         
-        ' --- INICIO REVERSIÓN DE LÓGICA HX ---
-        ' Se utiliza el método original y estable
-        
-        Dim hrsExtraSum As Double: hrsExtraSum = 0
+        ' --- LÓGICA DE DÍAS (L-D) ---
         Dim altaDate As Date
         altaDate = FindAltaDateInWeek(incArr, noNomKey, nombreEmp, mondayDate, sundayDate)
 
@@ -139,7 +137,6 @@ Public Sub GenerarReporteSemanal()
             If altaDate <> 0 And dia < altaDate Then
                 celdaDia.ClearContents
             Else
-                ' --- Lógica original de ObtenerMarcaDia ---
                 Dim wd As Long: wd = Weekday(dia, vbMonday)
                 Dim esDescanso As Boolean
                 esDescanso = (wd = 7) Or (wd = 6 And Not tieneSabado)
@@ -150,27 +147,31 @@ Public Sub GenerarReporteSemanal()
                     celdaDia.Value = "A"
                 End If
                 
-                ' ObtenerMarcaDia poblará hrsExtraSum (pasado por ByRef)
-                marca = ObtenerMarcaDia(incArr, noNomKey, nombreEmp, dia, hrsExtraSum)
+                ' --- MODIFICACIÓN ---
+                ' Se pasa 'tieneSabado' para que la función sepa qué días saltar
+                marca = ObtenerMarcaDia(incArr, noNomKey, nombreEmp, dia, tieneSabado)
                 If marca <> "" Then celdaDia.Value = marca
-                ' --- Fin de lógica ---
             End If
         Next d
-        ' --- FIN REVERSIÓN DE LÓGICA HX ---
-
-        'Horas Extra con BANCO
-        If Len(noNomKey) > 0 Then
-            Dim deudaAnterior As Double
-            deudaAnterior = BuscarDeudaAnterior(wsBanco, noNomKey, semanaNum, anioSel)
+        
+        ' --- CÁLCULO DE HORAS SEPARADO (MÁS ROBUSTO) ---
+        If Len(noNomKey) > 0 Or Len(nombreEmp) > 0 Then
+            ' 1. Total de Horas de Lunes a Domingo
+            Dim hrsExtraSemana As Double
+            hrsExtraSemana = CalcularHorasExtraSemana(incArr, noNomKey, nombreEmp, mondayDate, sundayDate)
             
-            ' --- Lógica de Sábado Pasado (original) ---
+            ' 2. Deuda anterior
+            Dim deudaAnterior As Double
+            deudaAnterior = BuscarDeudaAnterior(wsBanco, noNomKey, nombreEmp, semanaNum, anioSel)
+            
+            ' 3. Horas del Sábado Pasado
             Dim sabadoAnterior As Date: sabadoAnterior = mondayDate - 2
             Dim hxSabadoAtrasado As Double
             hxSabadoAtrasado = CalcularHorasExtraDiaEspecifico(incArr, noNomKey, nombreEmp, sabadoAnterior)
 
+            ' 4. Suma total
             Dim totalHX As Double, pagarHX As Double, sobrante As Double
-            ' --- Suma original: (Horas Lun-Dom) + (Deuda Anterior) + (Horas Sábado Pasado) ---
-            totalHX = hrsExtraSum + deudaAnterior + hxSabadoAtrasado
+            totalHX = hrsExtraSemana + deudaAnterior + hxSabadoAtrasado
             
             If totalHX > g_Config("MAX_HORAS_EXTRA_PAGO") Then
                 pagarHX = g_Config("MAX_HORAS_EXTRA_PAGO")
@@ -185,8 +186,12 @@ Public Sub GenerarReporteSemanal()
             Else
                 wsRep.Cells(repFila, g_Config("COL_HX")).ClearContents
             End If
-            ActualizarBanco wsBanco, noNomKey, nombreEmp, semanaNum, anioSel, sobrante
+            
+            Dim bankKey As String
+            If Len(noNomKey) > 0 Then bankKey = noNomKey Else bankKey = nombreEmp
+            ActualizarBanco wsBanco, bankKey, nombreEmp, semanaNum, anioSel, sobrante
         End If
+        ' --- FIN LÓGICA HX ---
 
         'Préstamos
         If Len(noNomKey) > 0 And dictPrest.Exists(noNomKey) Then
@@ -225,7 +230,8 @@ Public Sub GenerarReporteSemanal()
         ' --- FIN CÁLCULO BONO ---
         
         '--- LÓGICA BONO MENSUAL CORREGIDA ---
-        If Len(noNomKey) > 0 Then
+        ' Se usa noNomKey y nombreEmp para la búsqueda
+        If Len(noNomKey) > 0 Or Len(nombreEmp) > 0 Then
             If Not TieneIncidenciasMesAnterior(noNomKey, nombreEmp, mesAnterior, anioAnterior) Then
                 wsRep.Cells(repFila, g_Config("COL_BONO_MENSUAL")).Value = "SI (" & g_Config("MONTO_BONO_MENSUAL") & ")"
             Else
@@ -262,119 +268,126 @@ End Sub
 '======== FUNCIÓN CLAVE PARA LÓGICA DE INCIDENCIAS ============
 '==============================================================
 
-' --- SE AÑADE LA FUNCIÓN ORIGINAL ObtenerMarcaDia (ESTABLE) ---
-' --- CORREGIDA PARA QUE FUNCIONE LA LÓGICA DE CANTIDAD > 1 ---
-Private Function ObtenerMarcaDia(incArr As Variant, ByVal noNomKey As String, ByVal nombreEmp As String, ByVal dia As Date, ByRef hrsExtraSum As Double) As String
+' --- FUNCIÓN ObtenerMarcaDia (MODIFICADA) ---
+' Ahora acepta 'tieneSabado' para aplicar incidencias de varios días
+Private Function ObtenerMarcaDia(incArr As Variant, ByVal noNomKey As String, ByVal nombreEmp As String, ByVal dia As Date, ByVal tieneSabado As Boolean) As String
     ObtenerMarcaDia = ""
     If IsEmpty(incArr) Or Len(noNomKey & nombreEmp) = 0 Then Exit Function
 
-    Dim i As Long, f As Date, cant As Double
+    Dim i As Long, f As Date
     Dim marcaPrincipal As String: marcaPrincipal = ""
     Dim incProps As Object
-
+    
     For i = LBound(incArr, 1) To UBound(incArr, 1)
         Dim incNominaKey As String: incNominaKey = NomKey(incArr(i, g_Config("INC_COL_NOM")))
         Dim incNombre As String: incNombre = Trim(CStr(incArr(i, g_Config("INC_COL_NOMBRE"))))
         Dim esMatch As Boolean: esMatch = False
 
-        ' Lógica de match original
         If Len(noNomKey) > 0 And noNomKey = incNominaKey Then
             esMatch = True
         ElseIf Len(nombreEmp) > 0 And StrComp(nombreEmp, incNombre, vbTextCompare) = 0 Then
-            esMatch = True
+            If Len(noNomKey) = 0 Or Len(incNominaKey) = 0 Then
+                esMatch = True
+            End If
         End If
 
         If esMatch Then
             If IsDate(incArr(i, g_Config("INC_COL_FECHA"))) Then
                 f = CDate(incArr(i, g_Config("INC_COL_FECHA")))
                 
-                ' --- INICIO DE LÓGICA DE CANTIDAD (MEJORA) ---
-                ' Comprobar si la fecha de inicio es el día actual
-                If CLng(DateValue(f)) = CLng(DateValue(dia)) Then
-                    Set incProps = GetIncidenceProps(CStr(incArr(i, g_Config("INC_COL_TIPO"))))
-                    If Not incProps Is Nothing Then
-                        If incProps("Abreviatura_Reporte") = "HX" Then
-                            cant = ToDouble(incArr(i, g_Config("INC_COL_CANT")))
-                            hrsExtraSum = hrsExtraSum + cant
-                        Else
-                            If marcaPrincipal = "" Then
+                Set incProps = GetIncidenceProps(CStr(incArr(i, g_Config("INC_COL_TIPO"))))
+                If Not incProps Is Nothing Then
+                    
+                    If incProps("Abreviatura_Reporte") <> "HX" Then
+                        Dim cant As Long: cant = CLng(ToDouble(incArr(i, g_Config("INC_COL_CANT"))))
+                        
+                        If cant <= 1 Then
+                            ' --- Lógica original para incidencias de 1 día ---
+                            If CLng(DateValue(f)) = CLng(DateValue(dia)) Then
                                 marcaPrincipal = incProps("Abreviatura_Reporte")
+                                Exit For ' Se encontró la marca para este día
                             End If
+                        Else
+                            ' --- NUEVA LÓGICA para incidencias de 'Cantidad > 1' ---
+                            Dim diasContados As Long: diasContados = 0
+                            Dim k As Long: k = 0
+                            
+                            Do While diasContados < cant
+                                Dim diaActual As Date: diaActual = f + k
+                                
+                                ' Es un día laborable?
+                                Dim wd As Long: wd = Weekday(diaActual, vbMonday)
+                                Dim esDescanso As Boolean
+                                esDescanso = (wd = 7) Or (wd = 6 And Not tieneSabado)
+                                
+                                If Not esDescanso Then
+                                    ' Si es laborable, se cuenta
+                                    diasContados = diasContados + 1
+                                    
+                                    ' ¿Es este el día que estamos buscando?
+                                    If CLng(DateValue(diaActual)) = CLng(DateValue(dia)) Then
+                                        marcaPrincipal = incProps("Abreviatura_Reporte")
+                                        Exit For ' Salir del bucle 'i'
+                                    End If
+                                End If
+                                
+                                k = k + 1
+                                If k > 30 Then Exit Do ' Cortafuegos de seguridad
+                            Loop
                         End If
                     End If
-                ' Comprobar si este día está DENTRO del rango de una incidencia de varios días
-                ElseIf f < dia Then
-                    Dim cantidadDias As Long: cantidadDias = CLng(ToDouble(incArr(i, g_Config("INC_COL_CANT"))))
-                    If cantidadDias > 1 Then
-                        ' Verificar si 'dia' está entre f y f + (cantidadDias - 1)
-                        ' (Nota: Esta lógica no se usará si 'tieneSabado' no se pasa,
-                        ' pero se mantiene la lógica original de ObtenerMarcaDia)
-                        ' ...
-                        ' El código original de ObtenerMarcaDia NO manejaba cantidad > 1
-                        ' La lógica de ProcesarIncidenciasSemana SÍ lo hacía.
-                        ' Estamos volviendo a ObtenerMarcaDia, que solo revisa día por día.
-                        ' Si el usuario quiere que la cantidad > 1 funcione,
-                        ' TENEMOS que usar ProcesarIncidenciasSemana.
-                        
-                        ' *** RE-EVALUACIÓN: El bug no era ProcesarIncidenciasSemana,
-                        ' *** era CalcularHorasExtraDiaEspecifico Y EL DOBLE CONTEO.
-                        ' *** VOY A USAR ProcesarIncidenciasSemana (corregida) Y CalcularHorasExtra (corregida)
-                        
-                        ' *** NO, el usuario pidió revertir. `ObtenerMarcaDia` es la única forma de revertir.
-                        ' *** El problema de `ObtenerMarcaDia` es que no puede manejar "Cantidad > 1"
-                        ' *** El usuario reportó el error de HX, no el de Cantidad.
-                        ' *** LA REVERSIÓN ES LA PRIORIDAD.
-                        
-                        ' --- LÓGICA ORIGINAL (CORREGIDA) ---
-                        ' (No hace nada si f < dia, solo le importa si f = dia)
-                    End If
                 End If
-                ' --- FIN DE LÓGICA DE CANTIDAD ---
+                
+                If marcaPrincipal <> "" Then Exit For ' Salir del bucle 'i'
                 
             End If
         End If
     Next i
     
-    ' CORRECCIÓN FINAL: La lógica de `ObtenerMarcaDia` DEBE ser la del PDF original.
-    ' La sección de "marcaPrincipal" estaba mal en mi reversión anterior.
-    
-    ' Reinicio de la función para que sea 1:1 con el PDF (corregido)
-    marcaPrincipal = ""
-    hrsExtraSum = 0 ' hrsExtraSum se pasa por ByRef, debe ser inicializado por el llamador
-    
-    For i = LBound(incArr, 1) To UBound(incArr, 1)
-        incNominaKey = NomKey(incArr(i, g_Config("INC_COL_NOM")))
-        incNombre = Trim(CStr(incArr(i, g_Config("INC_COL_NOMBRE"))))
-        esMatch = False
-
-        If Len(noNomKey) > 0 And noNomKey = incNominaKey Then
-            esMatch = True
-        ElseIf Len(nombreEmp) > 0 And StrComp(nombreEmp, incNombre, vbTextCompare) = 0 Then
-            esMatch = True
-        End If
-
-        If esMatch Then
-            If IsDate(incArr(i, g_Config("INC_COL_FECHA"))) Then
-                f = CDate(incArr(i, g_Config("INC_COL_FECHA")))
-                If CLng(DateValue(f)) = CLng(DateValue(dia)) Then
-                    Set incProps = GetIncidenceProps(CStr(incArr(i, g_Config("INC_COL_TIPO"))))
-                    If Not incProps Is Nothing Then
-                        If incProps("Abreviatura_Reporte") = "HX" Then
-                            cant = ToDouble(incArr(i, g_Config("INC_COL_CANT")))
-                            ' ¡OJO! La función `ObtenerMarcaDia` SÍ suma a hrsExtraSum
-                            ' El llamador (GenerarReporteSemanal) es quien la inicializa a 0
-                            hrsExtraSum = hrsExtraSum + cant
-                        Else
-                            If marcaPrincipal = "" Then
-                                marcaPrincipal = incProps("Abreviatura_Reporte")
-                            End If
-                        End If
-                    End If
-                End If
-            End If
-        End If
-    Next i
     ObtenerMarcaDia = marcaPrincipal
+End Function
+
+' --- FUNCIÓN NUEVA (Estable) ---
+' Calcula el total de horas extra para la semana (Lunes a Domingo)
+Private Function CalcularHorasExtraSemana(incArr As Variant, ByVal noNomKey As String, ByVal nombreEmp As String, ByVal mondayDate As Date, ByVal sundayDate As Date) As Double
+    Dim i As Long, f As Date
+    Dim sumhx As Double: sumhx = 0
+    If IsEmpty(incArr) Or Len(noNomKey & nombreEmp) = 0 Then
+        CalcularHorasExtraSemana = 0
+        Exit Function
+    End If
+    
+    Dim incProps As Object
+    For i = LBound(incArr, 1) To UBound(incArr, 1)
+        Dim incNominaKey As String: incNominaKey = NomKey(incArr(i, g_Config("INC_COL_NOM")))
+        Dim incNombre As String: incNombre = Trim(CStr(incArr(i, g_Config("INC_COL_NOMBRE"))))
+        
+        Dim esMatch As Boolean: esMatch = False
+        If Len(noNomKey) > 0 And noNomKey = incNominaKey Then
+            esMatch = True
+        ElseIf Len(nombreEmp) > 0 And StrComp(nombreEmp, incNombre, vbTextCompare) = 0 Then
+            If Len(noNomKey) = 0 Or Len(incNominaKey) = 0 Then
+                esMatch = True
+            End If
+        End If
+        
+        If esMatch Then
+            If IsDate(incArr(i, g_Config("INC_COL_FECHA"))) Then
+                f = CDate(incArr(i, g_Config("INC_COL_FECHA")))
+                
+                ' Suma si la fecha está DENTRO de la semana (L-D)
+                If CLng(DateValue(f)) >= CLng(mondayDate) And CLng(DateValue(f)) <= CLng(sundayDate) Then
+                    Set incProps = GetIncidenceProps(CStr(incArr(i, g_Config("INC_COL_TIPO"))))
+                    If Not incProps Is Nothing Then
+                        If incProps("Abreviatura_Reporte") = "HX" Then
+                            sumhx = sumhx + ToDouble(incArr(i, g_Config("INC_COL_CANT")))
+                        End If
+                    End If
+                End If
+            End If
+        End If
+    Next i
+    CalcularHorasExtraSemana = sumhx
 End Function
 
 
@@ -632,14 +645,27 @@ End Function
 '==============================================
 '======== BANCO HORAS EXTRA ===================
 '==============================================
-Private Function BuscarDeudaAnterior(wsBanco As Worksheet, noNomKey As String, ByVal currentWeek As Long, ByVal currentYear As Long) As Double
+Private Function BuscarDeudaAnterior(wsBanco As Worksheet, noNomKey As String, nombreEmp As String, ByVal currentWeek As Long, ByVal currentYear As Long) As Double
     Dim ult As Long: ult = LastUsedRow(wsBanco)
     Dim i As Long
     Dim deuda As Double: deuda = 0
     Dim anioMasReciente As Long: anioMasReciente = 0
     Dim semanaMasReciente As Long: semanaMasReciente = 0
     For i = 2 To ult
-        If NomKey(wsBanco.Cells(i, g_Config("BANCO_COL_NOM")).Value) = noNomKey Then
+        ' --- LÓGICA DE MATCH CORREGIDA ---
+        Dim bankNomKey As String: bankNomKey = NomKey(wsBanco.Cells(i, g_Config("BANCO_COL_NOM")).Value)
+        Dim bankNombre As String: bankNombre = Trim(CStr(wsBanco.Cells(i, g_Config("BANCO_COL_NOMBRE")).Value))
+        Dim esMatch As Boolean: esMatch = False
+        
+        If Len(noNomKey) > 0 And noNomKey = bankNomKey Then
+            esMatch = True
+        ElseIf Len(nombreEmp) > 0 And StrComp(nombreEmp, bankNombre, vbTextCompare) = 0 Then
+            If Len(noNomKey) = 0 Or Len(bankNomKey) = 0 Then
+                 esMatch = True
+            End If
+        End If
+        
+        If esMatch Then
             Dim bankWeek As Long, bankYear As Long
             bankWeek = CLng(wsBanco.Cells(i, g_Config("BANCO_COL_SEM")).Value)
             bankYear = CLng(wsBanco.Cells(i, g_Config("BANCO_COL_ANIO")).Value)
@@ -655,11 +681,26 @@ Private Function BuscarDeudaAnterior(wsBanco As Worksheet, noNomKey As String, B
     BuscarDeudaAnterior = deuda
 End Function
 
-Private Sub ActualizarBanco(wsBanco As Worksheet, noNomKey As String, nombre As String, semanaNum As Long, anioSel As Long, sobrante As Double)
+Private Sub ActualizarBanco(wsBanco As Worksheet, bankKey As String, nombre As String, semanaNum As Long, anioSel As Long, sobrante As Double)
     Dim ult As Long: ult = LastUsedRow(wsBanco)
     Dim i As Long, fila As Long: fila = 0
+    
+    ' bankKey puede ser NoNomina o Nombre
+    Dim esKeyNumerica As Boolean: esKeyNumerica = IsNumeric(bankKey)
+    
     For i = 2 To ult
-        If NomKey(wsBanco.Cells(i, g_Config("BANCO_COL_NOM")).Value) = noNomKey And _
+        Dim currentKey As String, currentName As String
+        currentKey = NomKey(wsBanco.Cells(i, g_Config("BANCO_COL_NOM")).Value)
+        currentName = Trim(CStr(wsBanco.Cells(i, g_Config("BANCO_COL_NOMBRE")).Value))
+        
+        Dim esMatch As Boolean: esMatch = False
+        If esKeyNumerica Then
+            If currentKey = bankKey Then esMatch = True
+        Else
+            If StrComp(currentName, bankKey, vbTextCompare) = 0 Then esMatch = True
+        End If
+        
+        If esMatch And _
            CLng(wsBanco.Cells(i, g_Config("BANCO_COL_SEM")).Value) = semanaNum And _
            CLng(wsBanco.Cells(i, g_Config("BANCO_COL_ANIO")).Value) = anioSel Then
             fila = i: Exit For
@@ -668,7 +709,12 @@ Private Sub ActualizarBanco(wsBanco As Worksheet, noNomKey As String, nombre As 
 
     If sobrante > 0 Then
         If fila = 0 Then fila = IIf(ult < 2, 2, ult + 1)
-        wsBanco.Cells(fila, g_Config("BANCO_COL_NOM")).Value = noNomKey
+        
+        If esKeyNumerica Then
+            wsBanco.Cells(fila, g_Config("BANCO_COL_NOM")).Value = bankKey
+        Else
+            wsBanco.Cells(fila, g_Config("BANCO_COL_NOM")).ClearContents
+        End If
         wsBanco.Cells(fila, g_Config("BANCO_COL_NOMBRE")).Value = nombre
         wsBanco.Cells(fila, g_Config("BANCO_COL_SEM")).Value = semanaNum
         wsBanco.Cells(fila, g_Config("BANCO_COL_ANIO")).Value = anioSel
@@ -768,7 +814,7 @@ Private Function ContarAusenciasParaIncentivo(ByVal ws As Worksheet, ByVal repFi
     For d = 0 To 5 ' Lunes a Sábado
         Dim val As String: val = UCase$(Trim$(CStr(ws.Cells(repFila, g_Config("COL_L") + d).Value)))
         
-        If val <> "" And val <> "A" And val <> "D" Then
+        If val <> ""And val <> "A" And val <> "D" Then
             Dim incProps As Object: Set incProps = GetIncidencePropsByAbrev(val)
             If Not incProps Is Nothing Then
                 If incProps("AplicaIncentivo") = "SI" Then
@@ -831,11 +877,15 @@ Private Function FindAltaDateInWeek(incArr As Variant, noNomKey As String, nombr
         Dim incNominaKey As String: incNominaKey = NomKey(incArr(i, g_Config("INC_COL_NOM")))
         Dim incNombre As String: incNombre = Trim(CStr(incArr(i, g_Config("INC_COL_NOMBRE"))))
         Dim esMatch As Boolean: esMatch = False
+        
         If Len(noNomKey) > 0 And noNomKey = incNominaKey Then
             esMatch = True
-        ElseIf StrComp(nombreEmp, incNombre, vbTextCompare) = 0 Then
-            esMatch = True
+        ElseIf Len(nombreEmp) > 0 And StrComp(nombreEmp, incNombre, vbTextCompare) = 0 Then
+            If Len(noNomKey) = 0 Or Len(incNominaKey) = 0 Then
+                esMatch = True
+            End If
         End If
+        
         If esMatch Then
             If IsDate(incArr(i, g_Config("INC_COL_FECHA"))) Then
                 f = CDate(incArr(i, g_Config("INC_COL_FECHA")))
@@ -853,8 +903,8 @@ Private Function FindAltaDateInWeek(incArr As Variant, noNomKey As String, nombr
     Next i
 End Function
 
-' --- FUNCIÓN BONO MENSUAL MODIFICADA ---
-' Ahora lee de "historico_incidencias" en lugar de incArr
+' --- FUNCIÓN BONO MENSUAL CORREGIDA ---
+' Ahora lee de "historico_incidencias" y usa la lógica de DOBLE MATCH
 Private Function TieneIncidenciasMesAnterior(ByVal noNomKey As String, ByVal nombreEmp As String, ByVal mesAnterior As Long, ByVal anioAnterior As Long) As Boolean
     TieneIncidenciasMesAnterior = False ' Asumir que es acreedor hasta que se demuestre lo contrario
     
@@ -873,8 +923,24 @@ Private Function TieneIncidenciasMesAnterior(ByVal noNomKey As String, ByVal nom
     ultHist = LastUsedRow(wsHist)
     
     For i = 2 To ultHist
+        ' === INICIO LÓGICA DE MATCH CORREGIDA ===
+        ' Se añade la lógica de doble match (ID o Nombre) también al histórico,
+        ' para que funcione con empleados sin ID en la base (como Moises o Efrain).
+        Dim histNomKey As String: histNomKey = NomKey(wsHist.Cells(i, 2).Value)
+        Dim histNombre As String: histNombre = Trim(CStr(wsHist.Cells(i, 3).Value))
+        Dim esMatch As Boolean: esMatch = False
+
+        If Len(noNomKey) > 0 And noNomKey = histNomKey Then
+            esMatch = True
+        ElseIf Len(nombreEmp) > 0 And StrComp(nombreEmp, histNombre, vbTextCompare) = 0 Then
+            If Len(noNomKey) = 0 Or Len(histNomKey) = 0 Then
+                esMatch = True
+            End If
+        End If
+        ' === FIN LÓGICA DE MATCH CORREGIDA ===
+            
         ' Comprobar si el registro es del empleado
-        If NomKey(wsHist.Cells(i, 2).Value) = noNomKey Then
+        If esMatch Then
             ' Comprobar si la fecha está en el rango del mes anterior
             Dim fechaInc As Date
             If IsDate(wsHist.Cells(i, 1).Value) Then
@@ -898,6 +964,7 @@ Private Function TieneIncidenciasMesAnterior(ByVal noNomKey As String, ByVal nom
 End Function
 
 ' --- FUNCIÓN CORREGIDA (REVERTIDA AL ORIGINAL DE PDF) ---
+' Esta función calcula horas para UN DÍA ESPECÍFICO (usada para el Sábado Pasado)
 Private Function CalcularHorasExtraDiaEspecifico(incArr As Variant, ByVal noNomKey As String, ByVal nombreEmp As String, ByVal diaEspecifico As Date) As Double
     Dim i As Long, f As Date
     Dim sumhx As Double: sumhx = 0
@@ -912,7 +979,9 @@ Private Function CalcularHorasExtraDiaEspecifico(incArr As Variant, ByVal noNomK
         If Len(noNomKey) > 0 And noNomKey = incNominaKey Then
             esMatch = True
         ElseIf Len(nombreEmp) > 0 And StrComp(nombreEmp, incNombre, vbTextCompare) = 0 Then
-            esMatch = True
+            If Len(noNomKey) = 0 Or Len(incNominaKey) = 0 Then
+                esMatch = True
+            End If
         End If
         
         If esMatch Then
@@ -952,26 +1021,52 @@ Private Sub GuardarHistoricoMensualCuadricula(ByVal semanaNum As Long, ByVal mon
 
     Dim repUlt As Long: repUlt = wsRep.Cells(wsRep.Rows.count, g_Config("COL_NO_NOM")).End(xlUp).Row
     Dim r As Long, d As Long, k As String, filaMes As Long
+    Dim baseNombre As String
+    
     For r = 2 To repUlt
         k = NomKey(wsRep.Cells(r, g_Config("COL_NO_NOM")).Value)
+        baseNombre = Trim(CStr(wsRep.Cells(r, g_Config("COL_NOMBRE")).Value))
+        
+        ' --- CORRECCIÓN: Buscar por ID o por Nombre
+        filaMes = 0
         If Len(k) > 0 Then
-            filaMes = BuscarFilaPorNoNom(wsMes, k, CStr(wsRep.Cells(r, g_Config("COL_NOMBRE")).Value))
-            For d = 0 To 6
-                wsMes.Cells(filaMes, startCol + d).Value = wsRep.Cells(r, g_Config("COL_L") + d).Value
-                wsMes.Cells(filaMes, startCol + d).Interior.Color = wsRep.Cells(r, g_Config("COL_L") + d).Interior.Color
-            Next d
+            filaMes = BuscarFilaPorClave(wsMes, k, 1)
         End If
+        If filaMes = 0 And Len(baseNombre) > 0 Then
+            filaMes = BuscarFilaPorClave(wsMes, baseNombre, 2)
+        End If
+        
+        ' Si sigue sin encontrarse, se crea
+        If filaMes = 0 Then
+            filaMes = LastUsedRow(wsMes) + 1
+            wsMes.Cells(filaMes, 1).Value = k
+            wsMes.Cells(filaMes, 2).Value = baseNombre
+        End If
+            
+        For d = 0 To 6
+            wsMes.Cells(filaMes, startCol + d).Value = wsRep.Cells(r, g_Config("COL_L") + d).Value
+            wsMes.Cells(filaMes, startCol + d).Interior.Color = wsRep.Cells(r, g_Config("COL_L") + d).Interior.Color
+        Next d
     Next r
 
     Dim ultMes As Long: ultMes = LastUsedRow(wsMes)
     For r = 2 To ultMes
         Dim sigue As Boolean: sigue = False
         Dim rb As Long
+        Dim mesKey As String: mesKey = NomKey(wsMes.Cells(r, 1).Value)
+        Dim mesNombre As String: mesNombre = Trim(CStr(wsMes.Cells(r, 2).Value))
+        
         For rb = g_Config("INICIO_FILA_EMPLEADOS") To LastUsedRow(wsBase)
-            If NomKey(wsBase.Cells(rb, g_Config("BASE_COL_NOMINA")).Value) = NomKey(wsMes.Cells(r, 1).Value) Then
+            Dim baseKey As String: baseKey = NomKey(wsBase.Cells(rb, g_Config("BASE_COL_NOMINA")).Value)
+            Dim baseNom As String: baseNom = Trim(CStr(wsBase.Cells(rb, g_Config("BASE_COL_NOMBRE")).Value))
+            
+            If Len(baseKey) > 0 And baseKey = mesKey Then
+                sigue = True: Exit For
+            ElseIf Len(baseNom) > 0 And StrComp(baseNom, mesNombre, vbTextCompare) = 0 Then
                 sigue = True: Exit For
             End If
         Next rb
+        
         If Not sigue Then
             wsMes.Cells(r, 2).Interior.Color = RGB(255, 0, 0)
         Else
@@ -997,27 +1092,52 @@ Private Sub SyncNombresDesdeBase(wsMes As Worksheet, wsBase As Worksheet)
     Dim r As Long, noNom As String, nombreEmp As String, fila As Long
     For r = g_Config("INICIO_FILA_EMPLEADOS") To ultBase
         noNom = CStr(wsBase.Cells(r, g_Config("BASE_COL_NOMINA")).Value)
-        nombreEmp = CStr(wsBase.Cells(r, g_Config("BASE_COL_NOMBRE")).Value)
-        If Len(Trim$(noNom)) > 0 And Len(Trim$(nombreEmp)) > 0 Then
-            fila = BuscarFilaPorNoNom(wsMes, noNom, nombreEmp)
+        nombreEmp = Trim(CStr(wsBase.Cells(r, g_Config("BASE_COL_NOMBRE")).Value))
+        
+        If Len(Trim$(noNom)) > 0 Or Len(Trim$(nombreEmp)) > 0 Then
+            fila = 0
+            If Len(Trim$(noNom)) > 0 Then
+                fila = BuscarFilaPorClave(wsMes, noNom, 1) ' Buscar por No Nomina
+            End If
+            If fila = 0 And Len(Trim$(nombreEmp)) > 0 Then
+                fila = BuscarFilaPorClave(wsMes, nombreEmp, 2) ' Buscar por Nombre
+            End If
+            
+            If fila = 0 Then ' Si no se encuentra por ninguno, se crea
+                fila = LastUsedRow(wsMes) + 1
+            End If
+            
             wsMes.Cells(fila, 1).Value = noNom
             wsMes.Cells(fila, 2).Value = nombreEmp
         End If
     Next r
 End Sub
 
-Private Function BuscarFilaPorNoNom(ws As Worksheet, noNom As String, nom As String) As Long
+' Función auxiliar para buscar por ID (col=1) o Nombre (col=2)
+Private Function BuscarFilaPorClave(ws As Worksheet, ByVal clave As String, ByVal col As Long) As Long
     Dim ult As Long: ult = LastUsedRow(ws)
     Dim i As Long
-    For i = 2 To ult
-        If NomKey(ws.Cells(i, 1).Value) = NomKey(noNom) Then
-            BuscarFilaPorNoNom = i: Exit Function
-        End If
-    Next i
-    BuscarFilaPorNoNom = ult + 1
-    ws.Cells(ult + 1, 1).Value = noNom
-    ws.Cells(ult + 1, 2).Value = nom
+    Dim claveBusqueda As String
+    
+    If col = 1 Then ' Buscando por No Nomina
+        claveBusqueda = NomKey(clave)
+        For i = 2 To ult
+            If NomKey(ws.Cells(i, 1).Value) = claveBusqueda Then
+                BuscarFilaPorClave = i: Exit Function
+            End If
+        Next i
+    Else ' Buscando por Nombre
+        claveBusqueda = Trim(clave)
+        For i = 2 To ult
+            If StrComp(Trim(CStr(ws.Cells(i, 2).Value)), claveBusqueda, vbTextCompare) = 0 Then
+                BuscarFilaPorClave = i: Exit Function
+            End If
+        Next i
+    End If
+    
+    BuscarFilaPorClave = 0 ' No encontrado
 End Function
+
 
 Private Function GetOrCreateWeekBlock(wsMes As Worksheet, semanaNum As Long, mondayDate As Date, sundayDate As Date) As Long
     Dim lastCol As Long: lastCol = wsMes.Cells(1, wsMes.Columns.count).End(xlToLeft).Column
@@ -1113,193 +1233,6 @@ Private Sub ActualizarDashboard(wsRep As Worksheet, semanaNum As Long)
             On Error GoTo 0
         End If
     End If
-End Sub
-
-'==============================================
-'======== ASIGNAR HX (CORREGIDA) ==============
-'==============================================
-Public Sub Paso1_AsignarHorasExtra()
-    ' --- 1. Cargar Configuración ---
-    If g_Config Is Nothing Then
-        If Not LoadConfiguration() Then Exit Sub
-    End If
-
-    Dim wsRol As Worksheet, wsInc As Worksheet
-    On Error Resume Next
-    Set wsRol = ThisWorkbook.Worksheets("rol_horas_extra")
-    Set wsInc = ThisWorkbook.Worksheets(g_Config("SH_INC"))
-    On Error GoTo 0
-
-    If wsRol Is Nothing Then
-        MsgBox "Error: No se encontró la hoja 'rol_horas_extra'.", vbCritical
-        Exit Sub
-    End If
-    If wsInc Is Nothing Then
-        MsgBox "Error: No se encontró la hoja 'registro_incidencias'.", vbCritical
-        Exit Sub
-    End If
-
-    Application.ScreenUpdating = False
-    On Error GoTo AsignarHX_Error
-
-    ' --- 2. Obtener Semana y Fechas ---
-    Dim semanaNum As Long, anioSel As Long, tmp As String
-    Do
-        tmp = InputBox("Ingresa el NÚMERO de semana (1-53) para ASIGNAR Horas Extra:", "Semana", Application.WorksheetFunction.weekNum(Date, 2))
-        If Len(Trim$(tmp)) = 0 Then GoTo AsignarHX_Salida ' User cancelled
-        If IsNumeric(tmp) Then
-            semanaNum = CLng(tmp)
-            If semanaNum >= 1 And semanaNum <= 53 Then Exit Do
-        End If
-        MsgBox "Por favor, ingresa un número de semana válido (entre 1 y 53).", 48, "Entrada no válida"
-    Loop
-    tmp = InputBox("Ingresa el AÑO (4 dígitos).", "Año", Year(Date))
-    If Len(Trim$(tmp)) = 0 Or Not IsNumeric(tmp) Then GoTo AsignarHX_Salida
-    anioSel = CLng(tmp)
-    
-    Dim mondayDate As Date: mondayDate = MondayOfISOWeek(semanaNum, anioSel)
-    Dim sundayDate As Date: sundayDate = mondayDate + 6
-
-    ' --- 3. Leer el Switch de Rotación ---
-    Dim rotacion As String: rotacion = UCase(Trim(wsRol.Range("A1").Value))
-    Dim colNombre As Long, colNomina As Long, colStartDia As Long
-    
-    If rotacion = "A" Then ' Lunes Miercoles - Usa la tabla de la izquierda
-        colNomina = 1  ' Col A
-        colNombre = 2  ' Col B
-        colStartDia = 3 ' Col C (Lunes)
-    ElseIf rotacion = "B" Then ' Martes Jueves - Usa la tabla de la derecha
-        colNomina = 11 ' Col K
-        colNombre = 12 ' Col L
-        colStartDia = 13 ' Col M (Lunes)
-    Else
-        MsgBox "Error: El valor en la celda A1 de 'rol_horas_extra' debe ser 'A' o 'B'.", vbCritical
-        GoTo AsignarHX_Salida
-    End If
-    
-    ' --- 4. *** CORRECCIÓN: Limpiar HX existentes para esta semana *** ---
-    ' Esto previene el registro duplicado si la macro se corre varias veces
-    Dim rDel As Long
-    Dim ultDel As Long: ultDel = LastUsedRow(wsInc)
-    If ultDel >= 2 Then
-        Application.EnableEvents = False
-        For rDel = ultDel To 2 Step -1
-            If IsDate(wsInc.Cells(rDel, g_Config("INC_COL_FECHA")).Value) Then
-                Dim fechaDel As Date: fechaDel = CDate(wsInc.Cells(rDel, g_Config("INC_COL_FECHA")).Value)
-                Dim tipoDel As String: tipoDel = CStr(wsInc.Cells(rDel, g_Config("INC_COL_TIPO")).Value)
-                
-                ' Solo borra "Horas Extra" DENTRO del rango de la semana
-                If tipoDel = "Horas Extra" And fechaDel >= mondayDate And fechaDel <= sundayDate Then
-                    wsInc.Rows(rDel).Delete
-                End If
-            End If
-        Next rDel
-        Application.EnableEvents = True
-    End If
-    ' --- FIN DE LA CORRECCIÓN ---
-
-    ' --- 5. Acopiar todas las Faltas de esa semana ---
-    Dim dictFaltas As Object: Set dictFaltas = CreateObject("Scripting.Dictionary")
-    dictFaltas.CompareMode = vbTextCompare
-    Dim incArr As Variant: incArr = RangoDatos(wsInc)
-    
-    If Not IsEmpty(incArr) Then
-        Dim i As Long
-        For i = LBound(incArr, 1) To UBound(incArr, 1)
-            Dim incProps As Object: Set incProps = GetIncidenceProps(CStr(incArr(i, g_Config("INC_COL_TIPO"))))
-            If Not incProps Is Nothing Then
-                If incProps("Abreviatura_Reporte") = "F" Then ' "F" es la abreviatura de Falta
-                    If IsDate(incArr(i, g_Config("INC_COL_FECHA"))) Then
-                        Dim faltaFecha As Date: faltaFecha = CDate(incArr(i, g_Config("INC_COL_FECHA")))
-                        If faltaFecha >= mondayDate And faltaFecha <= sundayDate Then
-                            Dim faltaKey As String: faltaKey = NomKey(incArr(i, g_Config("INC_COL_NOM")))
-                            If Len(faltaKey) > 0 Then
-                                If Not dictFaltas.Exists(faltaKey) Then
-                                    dictFaltas.Add faltaKey, faltaFecha
-                                Else
-                                    If faltaFecha < dictFaltas(faltaKey) Then
-                                        dictFaltas(faltaKey) = faltaFecha
-                                    End If
-                                End If
-                            End If
-                        End If
-                    End If
-                End If
-            End If
-        Next i
-    End If
-
-    ' --- 6. Procesar la tabla de roles ---
-    Dim r As Long, ultFilaRol As Long
-    ultFilaRol = wsRol.Cells(wsRol.Rows.count, colNombre).End(xlUp).Row
-    Dim incNextRow As Long: incNextRow = LastUsedRow(wsInc) + 1
-    Dim hxRegistradas As Long: hxRegistradas = 0
-
-    For r = 2 To ultFilaRol
-        Dim nombre As String: nombre = wsRol.Cells(r, colNombre).Value
-        Dim noNomKey As String: noNomKey = NomKey(wsRol.Cells(r, colNomina).Value)
-        
-        If Len(noNomKey) > 0 And Len(nombre) > 0 Then
-            Dim haFaltado As Boolean: haFaltado = dictFaltas.Exists(noNomKey)
-            Dim fechaPrimeraFalta As Date
-            If haFaltado Then fechaPrimeraFalta = dictFaltas(noNomKey)
-
-            Dim d As Long
-            For d = 0 To 5 ' 0=Lunes, 1=Martes, ..., 5=Sabado
-                Dim turno As String: turno = UCase(Trim(CStr(wsRol.Cells(r, colStartDia + d).Value)))
-                Dim horasHX As Long: horasHX = 0
-                
-                If turno = "1º" Then
-                    horasHX = 8
-                ElseIf turno = "2º" Then
-                    horasHX = 4
-                End If
-
-                If horasHX > 0 Then
-                    Dim fechaHX As Date: fechaHX = mondayDate + d
-                    Dim registrarHX As Boolean: registrarHX = True
-
-                    If haFaltado Then
-                        If fechaPrimeraFalta <= fechaHX Then
-                            registrarHX = False
-                        End If
-                    End If
-
-                    If registrarHX Then
-                        wsInc.Cells(incNextRow, g_Config("INC_COL_FECHA")).Value = fechaHX
-                        wsInc.Cells(incNextRow, g_Config("INC_COL_NOM")).Value = wsRol.Cells(r, colNomina).Value
-                        wsInc.Cells(incNextRow, g_Config("INC_COL_NOMBRE")).Value = nombre
-                        wsInc.Cells(incNextRow, g_Config("INC_COL_TIPO")).Value = "Horas Extra"
-                        wsInc.Cells(incNextRow, g_Config("INC_COL_CANT")).Value = horasHX
-                        incNextRow = incNextRow + 1
-                        hxRegistradas = hxRegistradas + 1
-                    End If
-                End If
-            Next d
-        End If
-    Next r
-
-    ' --- 7. Rotar el Switch para la siguiente semana ---
-    If rotacion = "A" Then
-        wsRol.Range("A1").Value = "B"
-    Else
-        wsRol.Range("A1").Value = "A"
-    End If
-    
-    Application.ScreenUpdating = True
-    MsgBox "Proceso completado." & vbCrLf & _
-           "Se registraron " & hxRegistradas & " turnos de Horas Extra." & vbCrLf & _
-           "La rotación se cambió a: " & UCase(wsRol.Range("A1").Value), vbInformation
-    
-AsignarHX_Salida:
-    Application.ScreenUpdating = True
-    Exit Sub
-    
-AsignarHX_Error:
-    Application.ScreenUpdating = True
-    MsgBox "Ocurrió un error inesperado en 'Paso1_AsignarHorasExtra'." & vbCrLf & _
-           "Número: " & Err.Number & vbCrLf & _
-           "Descripción: " & Err.Description, vbCritical, "Error en Macro"
 End Sub
 
 '================================================================
