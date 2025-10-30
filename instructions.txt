@@ -1,0 +1,40 @@
+To ensure the bug is fully resolved, please follow these steps to clear the old, cached VBA code from your Excel file and apply the corrected version.
+
+**Instructions to Fix the VBA Overtime Calculation Bug**
+
+**Part 1: Delete the Old VBA Module**
+
+1.  **Open the VBA Editor:**
+    *   Open your Excel file.
+    *   Press `ALT + F11` to open the Visual Basic for Applications (VBA) editor.
+
+2.  **Locate the Project Explorer:**
+    *   If you don't see a "Project - VBAProject" window, go to `View > Project Explorer` in the menu bar.
+
+3.  **Find the Correct Module:**
+    *   In the Project Explorer, you will see a list of modules. The main code is likely in a module named `Module1` or something similar.
+    *   Double-click on each module to view its code. Find the one containing the `GenerarReporteSemanal` macro.
+
+4.  **Remove the Old Module:**
+    *   Right-click on the module you identified in the previous step.
+    *   Select **"Remove [Module Name]..."** (e.g., "Remove Module1...").
+    *   A dialog box will ask if you want to export the module before removing it. **Choose "No."** This is critical to ensure the old code is completely gone.
+
+**Part 2: Insert the New, Corrected Code**
+
+1.  **Insert a New Module:**
+    *   In the VBA editor, right-click anywhere in the "Project" window.
+    *   Select `Insert > Module`. A new, blank module will appear.
+
+2.  **Copy the Corrected Code:**
+    *   The corrected VBA code is in the file named `Ultimo Codigo`. Open this file and copy its entire contents.
+
+3.  **Paste the New Code:**
+    *   Go back to the VBA editor.
+    *   Paste the entire code into the new, blank module you created.
+
+4.  **Save and Test:**
+    *   Save your Excel file.
+    *   Run the `GenerarReporteSemanal` macro to confirm that the overtime calculation now works correctly.
+
+By following these instructions, you will ensure that Excel is running the latest, bug-free version of the code, and the overtime calculation issue will be resolved.

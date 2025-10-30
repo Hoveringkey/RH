@@ -123,23 +123,22 @@ Public Sub GenerarReporteSemanal()
         If incentivoBase > 0 Then wsRep.Cells(repFila, g_Config("COL_INCENT")).Value = incentivoBase Else wsRep.Cells(repFila, g_Config("COL_INCENT")).ClearContents
         If bonoBase > 0 Then wsRep.Cells(repFila, g_Config("COL_BONO")).Value = bonoBase Else wsRep.Cells(repFila, g_Config("COL_BONO")).ClearContents
         
-        ' --- INICIO REVERSIÓN DE LÓGICA HX ---
-        ' Se utiliza el método original y estable
-        
-        Dim hrsExtraSum As Double: hrsExtraSum = 0
+        ' --- INICIO NUEVA LÓGICA DE HORAS EXTRA (HX) ---
+        Dim hrsExtraSemana As Double
+        hrsExtraSemana = CalcularHorasExtraSemana(incArr, noNomKey, nombreEmp, mondayDate, sundayDate)
+
         Dim altaDate As Date
         altaDate = FindAltaDateInWeek(incArr, noNomKey, nombreEmp, mondayDate, sundayDate)
 
-        Dim d As Long, dia As Date, diaKey As Long, marca As String
+        Dim d As Long, dia As Date, marca As String
         For d = 0 To 6
             dia = mondayDate + d
-            diaKey = CLng(dia)
             Dim celdaDia As Range: Set celdaDia = wsRep.Cells(repFila, g_Config("COL_L") + d)
 
             If altaDate <> 0 And dia < altaDate Then
                 celdaDia.ClearContents
             Else
-                ' --- Lógica original de ObtenerMarcaDia ---
+                ' --- Lógica de ObtenerMarcaDia simplificada ---
                 Dim wd As Long: wd = Weekday(dia, vbMonday)
                 Dim esDescanso As Boolean
                 esDescanso = (wd = 7) Or (wd = 6 And Not tieneSabado)
@@ -150,27 +149,28 @@ Public Sub GenerarReporteSemanal()
                     celdaDia.Value = "A"
                 End If
                 
-                ' ObtenerMarcaDia poblará hrsExtraSum (pasado por ByRef)
-                marca = ObtenerMarcaDia(incArr, noNomKey, nombreEmp, dia, hrsExtraSum)
+                ' La nueva función ObtenerMarcaDia ya no suma HX.
+                ' Solo devuelve la marca visual de la incidencia.
+                marca = ObtenerMarcaDia(incArr, noNomKey, nombreEmp, dia)
                 If marca <> "" Then celdaDia.Value = marca
-                ' --- Fin de lógica ---
+                ' --- Fin de lógica simplificada ---
             End If
         Next d
-        ' --- FIN REVERSIÓN DE LÓGICA HX ---
+        ' --- FIN NUEVA LÓGICA DE HORAS EXTRA (HX) ---
 
         'Horas Extra con BANCO
         If Len(noNomKey) > 0 Then
             Dim deudaAnterior As Double
             deudaAnterior = BuscarDeudaAnterior(wsBanco, noNomKey, semanaNum, anioSel)
             
-            ' --- Lógica de Sábado Pasado (original) ---
+            ' --- Lógica de Sábado Pasado (se mantiene) ---
             Dim sabadoAnterior As Date: sabadoAnterior = mondayDate - 2
             Dim hxSabadoAtrasado As Double
             hxSabadoAtrasado = CalcularHorasExtraDiaEspecifico(incArr, noNomKey, nombreEmp, sabadoAnterior)
 
             Dim totalHX As Double, pagarHX As Double, sobrante As Double
-            ' --- Suma original: (Horas Lun-Dom) + (Deuda Anterior) + (Horas Sábado Pasado) ---
-            totalHX = hrsExtraSum + deudaAnterior + hxSabadoAtrasado
+            ' --- Nueva suma: (Horas Lun-Dom de la nueva función) + (Deuda Anterior) + (Horas Sábado Pasado) ---
+            totalHX = hrsExtraSemana + deudaAnterior + hxSabadoAtrasado
             
             If totalHX > g_Config("MAX_HORAS_EXTRA_PAGO") Then
                 pagarHX = g_Config("MAX_HORAS_EXTRA_PAGO")
@@ -262,13 +262,13 @@ End Sub
 '======== FUNCIÓN CLAVE PARA LÓGICA DE INCIDENCIAS ============
 '==============================================================
 
-' --- SE AÑADE LA FUNCIÓN ORIGINAL ObtenerMarcaDia (ESTABLE) ---
-' --- CORREGIDA PARA QUE FUNCIONE LA LÓGICA DE CANTIDAD > 1 ---
-Private Function ObtenerMarcaDia(incArr As Variant, ByVal noNomKey As String, ByVal nombreEmp As String, ByVal dia As Date, ByRef hrsExtraSum As Double) As String
+' --- FUNCIÓN ObtenerMarcaDia SIMPLIFICADA ---
+' --- Ya no calcula Horas Extra, solo devuelve la marca visual ---
+Private Function ObtenerMarcaDia(incArr As Variant, ByVal noNomKey As String, ByVal nombreEmp As String, ByVal dia As Date) As String
     ObtenerMarcaDia = ""
     If IsEmpty(incArr) Or Len(noNomKey & nombreEmp) = 0 Then Exit Function
 
-    Dim i As Long, f As Date, cant As Double
+    Dim i As Long, f As Date
     Dim marcaPrincipal As String: marcaPrincipal = ""
     Dim incProps As Object
 
@@ -277,7 +277,6 @@ Private Function ObtenerMarcaDia(incArr As Variant, ByVal noNomKey As String, By
         Dim incNombre As String: incNombre = Trim(CStr(incArr(i, g_Config("INC_COL_NOMBRE"))))
         Dim esMatch As Boolean: esMatch = False
 
-        ' Lógica de match original
         If Len(noNomKey) > 0 And noNomKey = incNominaKey Then
             esMatch = True
         ElseIf Len(nombreEmp) > 0 And StrComp(nombreEmp, incNombre, vbTextCompare) = 0 Then
@@ -288,83 +287,11 @@ Private Function ObtenerMarcaDia(incArr As Variant, ByVal noNomKey As String, By
             If IsDate(incArr(i, g_Config("INC_COL_FECHA"))) Then
                 f = CDate(incArr(i, g_Config("INC_COL_FECHA")))
                 
-                ' --- INICIO DE LÓGICA DE CANTIDAD (MEJORA) ---
-                ' Comprobar si la fecha de inicio es el día actual
                 If CLng(DateValue(f)) = CLng(DateValue(dia)) Then
                     Set incProps = GetIncidenceProps(CStr(incArr(i, g_Config("INC_COL_TIPO"))))
                     If Not incProps Is Nothing Then
-                        If incProps("Abreviatura_Reporte") = "HX" Then
-                            cant = ToDouble(incArr(i, g_Config("INC_COL_CANT")))
-                            hrsExtraSum = hrsExtraSum + cant
-                        Else
-                            If marcaPrincipal = "" Then
-                                marcaPrincipal = incProps("Abreviatura_Reporte")
-                            End If
-                        End If
-                    End If
-                ' Comprobar si este día está DENTRO del rango de una incidencia de varios días
-                ElseIf f < dia Then
-                    Dim cantidadDias As Long: cantidadDias = CLng(ToDouble(incArr(i, g_Config("INC_COL_CANT"))))
-                    If cantidadDias > 1 Then
-                        ' Verificar si 'dia' está entre f y f + (cantidadDias - 1)
-                        ' (Nota: Esta lógica no se usará si 'tieneSabado' no se pasa,
-                        ' pero se mantiene la lógica original de ObtenerMarcaDia)
-                        ' ...
-                        ' El código original de ObtenerMarcaDia NO manejaba cantidad > 1
-                        ' La lógica de ProcesarIncidenciasSemana SÍ lo hacía.
-                        ' Estamos volviendo a ObtenerMarcaDia, que solo revisa día por día.
-                        ' Si el usuario quiere que la cantidad > 1 funcione,
-                        ' TENEMOS que usar ProcesarIncidenciasSemana.
-                        
-                        ' *** RE-EVALUACIÓN: El bug no era ProcesarIncidenciasSemana,
-                        ' *** era CalcularHorasExtraDiaEspecifico Y EL DOBLE CONTEO.
-                        ' *** VOY A USAR ProcesarIncidenciasSemana (corregida) Y CalcularHorasExtra (corregida)
-                        
-                        ' *** NO, el usuario pidió revertir. `ObtenerMarcaDia` es la única forma de revertir.
-                        ' *** El problema de `ObtenerMarcaDia` es que no puede manejar "Cantidad > 1"
-                        ' *** El usuario reportó el error de HX, no el de Cantidad.
-                        ' *** LA REVERSIÓN ES LA PRIORIDAD.
-                        
-                        ' --- LÓGICA ORIGINAL (CORREGIDA) ---
-                        ' (No hace nada si f < dia, solo le importa si f = dia)
-                    End If
-                End If
-                ' --- FIN DE LÓGICA DE CANTIDAD ---
-                
-            End If
-        End If
-    Next i
-    
-    ' CORRECCIÓN FINAL: La lógica de `ObtenerMarcaDia` DEBE ser la del PDF original.
-    ' La sección de "marcaPrincipal" estaba mal en mi reversión anterior.
-    
-    ' Reinicio de la función para que sea 1:1 con el PDF (corregido)
-    marcaPrincipal = ""
-    hrsExtraSum = 0 ' hrsExtraSum se pasa por ByRef, debe ser inicializado por el llamador
-    
-    For i = LBound(incArr, 1) To UBound(incArr, 1)
-        incNominaKey = NomKey(incArr(i, g_Config("INC_COL_NOM")))
-        incNombre = Trim(CStr(incArr(i, g_Config("INC_COL_NOMBRE"))))
-        esMatch = False
-
-        If Len(noNomKey) > 0 And noNomKey = incNominaKey Then
-            esMatch = True
-        ElseIf Len(nombreEmp) > 0 And StrComp(nombreEmp, incNombre, vbTextCompare) = 0 Then
-            esMatch = True
-        End If
-
-        If esMatch Then
-            If IsDate(incArr(i, g_Config("INC_COL_FECHA"))) Then
-                f = CDate(incArr(i, g_Config("INC_COL_FECHA")))
-                If CLng(DateValue(f)) = CLng(DateValue(dia)) Then
-                    Set incProps = GetIncidenceProps(CStr(incArr(i, g_Config("INC_COL_TIPO"))))
-                    If Not incProps Is Nothing Then
-                        If incProps("Abreviatura_Reporte") = "HX" Then
-                            cant = ToDouble(incArr(i, g_Config("INC_COL_CANT")))
-                            ' ¡OJO! La función `ObtenerMarcaDia` SÍ suma a hrsExtraSum
-                            ' El llamador (GenerarReporteSemanal) es quien la inicializa a 0
-                            hrsExtraSum = hrsExtraSum + cant
-                        Else
+                        ' Ya no se verifica si es "HX". Simplemente se toma la primera marca que no sea HX.
+                        If incProps("Abreviatura_Reporte") <> "HX" Then
                             If marcaPrincipal = "" Then
                                 marcaPrincipal = incProps("Abreviatura_Reporte")
                             End If
@@ -1422,3 +1349,44 @@ Private Sub LimpiarIncidenciasPasadas(wsInc As Worksheet, ByVal mondayDate As Da
     
     Application.EnableEvents = True
 End Sub
+
+'==============================================
+'======== FUNCIÓN NUEVA Y CORREGIDA PARA HX ===
+'==============================================
+Private Function CalcularHorasExtraSemana(incArr As Variant, ByVal noNomKey As String, ByVal nombreEmp As String, ByVal mondayDate As Date, ByVal sundayDate As Date) As Double
+    Dim i As Long, f As Date
+    Dim sumhx As Double: sumhx = 0
+    If IsEmpty(incArr) Or Len(noNomKey & nombreEmp) = 0 Then
+        CalcularHorasExtraSemana = 0
+        Exit Function
+    End If
+
+    Dim incProps As Object
+    For i = LBound(incArr, 1) To UBound(incArr, 1)
+        Dim incNominaKey As String: incNominaKey = NomKey(incArr(i, g_Config("INC_COL_NOM")))
+        Dim incNombre As String: incNombre = Trim(CStr(incArr(i, g_Config("INC_COL_NOMBRE"))))
+
+        Dim esMatch As Boolean: esMatch = False
+        If Len(noNomKey) > 0 And noNomKey = incNominaKey Then
+            esMatch = True
+        ElseIf Len(nombreEmp) > 0 And StrComp(nombreEmp, incNombre, vbTextCompare) = 0 Then
+            esMatch = True
+        End If
+
+        If esMatch Then
+            If IsDate(incArr(i, g_Config("INC_COL_FECHA"))) Then
+                f = CDate(incArr(i, g_Config("INC_COL_FECHA")))
+                ' Solo sumar si la fecha está dentro de la semana actual (Lun a Dom)
+                If f >= mondayDate And f <= sundayDate Then
+                    Set incProps = GetIncidenceProps(CStr(incArr(i, g_Config("INC_COL_TIPO"))))
+                    If Not incProps Is Nothing Then
+                        If incProps("Abreviatura_Reporte") = "HX" Then
+                            sumhx = sumhx + ToDouble(incArr(i, g_Config("INC_COL_CANT")))
+                        End If
+                    End If
+                End If
+            End If
+        End If
+    Next i
+    CalcularHorasExtraSemana = sumhx
+End Function
