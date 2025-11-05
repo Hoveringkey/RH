@@ -5,7 +5,7 @@ Option Explicit
 '==============================================
 Private g_Config As Object
 Private g_ConfigAbrev As Object ' Diccionario para buscar por Abreviatura
-Private g_VacHistorico As Object ' Diccionario para vacaciones históricas
+Private g_VacHistorico As Object ' Nuevo: Diccionario para histórico de vacaciones
 
 '==============================================
 '======== MACRO PRINCIPAL =====================
@@ -79,7 +79,7 @@ Public Sub GenerarReporteSemanal()
     histArr = RangoDatos(Worksheets(g_Config("SH_HIST")))
     ActualizarReporteMensual histArr, mondayDate
     '--- FIN REPORTE VISUAL ---
-
+    
     '--- ACTUALIZAR CONTROL DE VACACIONES ---
     ActualizarControlVacaciones wsVac, histArr
     '--- FIN CONTROL VACACIONES ---
@@ -93,14 +93,14 @@ Public Sub GenerarReporteSemanal()
     '6) --- NUEVA LÓGICA DE BONO MENSUAL (INTELIGENTE) ---
     Dim calcularBono As Boolean: calcularBono = False
     Dim mesCalculo As Long, anioCalculo As Long
-
+    
     Dim primerDiaMes As Date: primerDiaMes = DateSerial(Year(mondayDate), Month(mondayDate), 1)
     Dim ultimoDiaMesAnterior As Date: ultimoDiaMesAnterior = primerDiaMes - 1
     Dim diaSemanaFinMes As Long: diaSemanaFinMes = Weekday(ultimoDiaMesAnterior, vbMonday) ' 1=Lunes, 5=Viernes
-
+    
     ' ¿Estamos en la primera semana (días 1-7) del mes?
     If Day(mondayDate) >= 1 And Day(mondayDate) <= 7 Then
-
+        
         ' Si el mes anterior terminó en Viernes, Sábado o Domingo, el bono se pospuso.
         ' Así que lo pagamos AHORA.
         If diaSemanaFinMes >= 5 Then ' 5=Viernes, 6=Sábado, 7=Domingo
@@ -108,10 +108,10 @@ Public Sub GenerarReporteSemanal()
             mesCalculo = Month(ultimoDiaMesAnterior)
             anioCalculo = Year(ultimoDiaMesAnterior)
         End If
-
+        
     ' ¿La semana "cruza" el fin de mes? (ej. 29-Jul al 04-Ago)
     ElseIf Month(mondayDate) <> Month(sundayDate) Then
-
+        
         ' Si el mes que termina (ej. Julio) acabó entre Lunes y Jueves,
         ' tenemos tiempo de pagarlo en esta misma nómina.
         If diaSemanaFinMes >= 1 And diaSemanaFinMes <= 4 Then ' 1=Lunes, 4=Jueves
@@ -254,7 +254,7 @@ Public Sub GenerarReporteSemanal()
         
         '--- LÓGICA BONO MENSUAL (INTELIGENTE) ---
         wsRep.Cells(repFila, g_Config("COL_BONO_MENSUAL")).ClearContents ' Limpiar por defecto
-
+        
         If calcularBono Then
             If Len(noNomKey) > 0 Or Len(nombreEmp) > 0 Then
                 If Not TieneIncidenciasMesAnterior(histArr, noNomKey, nombreEmp, mesCalculo, anioCalculo) Then
@@ -301,7 +301,7 @@ Private Function ObtenerMarcaDia(incArr As Variant, ByVal noNomKey As String, By
     On Error Resume Next
     numDims = UBound(incArr, 2)
     On Error GoTo 0
-
+    
     If numDims = 0 And LBound(incArr, 1) = 1 And UBound(incArr, 1) >= g_Config("INC_COL_TIPO") Then
         ' Si es un array 1D (una fila), re-dimensionar a 2D (1 fila, N columnas)
         Dim tempArr As Variant
@@ -315,13 +315,13 @@ Private Function ObtenerMarcaDia(incArr As Variant, ByVal noNomKey As String, By
         Exit Function
     End If
     ' --- FIN FIX ---
-
+    
     For i = LBound(incArr, 1) To UBound(incArr, 1)
         Dim incNominaKey As String, incNombre As String, esMatch As Boolean
-
+        
         incNominaKey = NomKey(incArr(i, g_Config("INC_COL_NOM")))
         incNombre = Trim(CStr(incArr(i, g_Config("INC_COL_NOMBRE"))))
-
+        
         esMatch = False
         If Len(noNomKey) > 0 And noNomKey = incNominaKey Then
             esMatch = True
@@ -402,7 +402,7 @@ Private Function CalcularHorasExtraSemana(incArr As Variant, ByVal noNomKey As S
     On Error Resume Next
     numDims = UBound(incArr, 2)
     On Error GoTo 0
-
+    
     If numDims = 0 And LBound(incArr, 1) = 1 And UBound(incArr, 1) >= g_Config("INC_COL_TIPO") Then
         ' Si es un array 1D (una fila), re-dimensionar a 2D (1 fila, N columnas)
         Dim tempArr As Variant
@@ -417,14 +417,14 @@ Private Function CalcularHorasExtraSemana(incArr As Variant, ByVal noNomKey As S
         Exit Function
     End If
     ' --- FIN FIX ---
-
+    
     Dim incProps As Object
     For i = LBound(incArr, 1) To UBound(incArr, 1)
         Dim incNominaKey As String, incNombre As String, esMatch As Boolean
         
         incNominaKey = NomKey(incArr(i, g_Config("INC_COL_NOM")))
         incNombre = Trim(CStr(incArr(i, g_Config("INC_COL_NOMBRE"))))
-
+        
         esMatch = False
         If Len(noNomKey) > 0 And noNomKey = incNominaKey Then
             esMatch = True
@@ -528,7 +528,7 @@ Public Sub CrearReporteParaEnvio()
         sh.Delete
     Next sh
     On Error GoTo ErrorHandler
-
+    
     With ActiveSheet.UsedRange
         .Value = .Value
     End With
@@ -571,17 +571,17 @@ Public Sub ActualizarPrestamos()
         MsgBox "Error: No se encontraron las hojas necesarias para actualizar préstamos.", vbCritical
         Exit Sub
     End If
-
+    
     Dim repUltFila As Long: repUltFila = wsRep.Cells(wsRep.Rows.count, g_Config("COL_NO_NOM")).End(xlUp).Row
     Dim rr As Long, fpx As Long, nomRepKey As String
-
+    
     Dim omitidos As Long: omitidos = 0
     Dim actualizados As Long: actualizados = 0
 
     For rr = 2 To repUltFila
         nomRepKey = NomKey(wsRep.Cells(rr, g_Config("COL_NO_NOM")).Value)
         If Len(nomRepKey) > 0 Then
-
+            
             ' --- NUEVA LÓGICA: Revisar si tuvo PSG toda la semana ---
             If TuvoPsgTodaLaSemana(wsRep, rr) Then
                 omitidos = omitidos + 1
@@ -604,7 +604,7 @@ Public Sub ActualizarPrestamos()
     msg = "Pagos de préstamos actualizados." & vbCrLf & vbCrLf
     msg = msg & "Pagos aplicados: " & actualizados & vbCrLf
     msg = msg & "Pagos omitidos (por PSG): " & omitidos
-
+    
     MsgBox msg, vbInformation
 End Sub
 
@@ -612,15 +612,15 @@ End Sub
 Private Function TuvoPsgTodaLaSemana(wsRep As Worksheet, r As Long) As Boolean
     'Revisa si un empleado en la fila 'r' del reporte tuvo PSG todos sus días laborables
     TuvoPsgTodaLaSemana = False
-
+    
     On Error Resume Next
     Dim diasLaborables As Long: diasLaborables = 0
     Dim diasPsg As Long: diasPsg = 0
     Dim d As Long
-
+    
     For d = 0 To 6 'Lunes a Domingo
         Dim val As String: val = Trim(CStr(wsRep.Cells(r, g_Config("COL_L") + d).Value))
-
+        
         ' Contar solo días laborables (no "D" de descanso)
         If UCase(val) <> "D" And Len(val) > 0 Then
             diasLaborables = diasLaborables + 1
@@ -629,7 +629,7 @@ Private Function TuvoPsgTodaLaSemana(wsRep As Worksheet, r As Long) As Boolean
             End If
         End If
     Next d
-
+    
     If diasLaborables > 0 And diasPsg = diasLaborables Then
         TuvoPsgTodaLaSemana = True
     End If
@@ -642,79 +642,48 @@ End Function
 '==============================================
 Private Function LoadConfiguration() As Boolean
     On Error GoTo ConfigError
-
+    
     Set g_Config = CreateObject("Scripting.Dictionary")
     g_Config.CompareMode = vbTextCompare
     Set g_ConfigAbrev = CreateObject("Scripting.Dictionary")
     g_ConfigAbrev.CompareMode = vbTextCompare
-    Set g_VacHistorico = CreateObject("Scripting.Dictionary")
+    Set g_VacHistorico = CreateObject("Scripting.Dictionary") ' Inicializar nuevo diccionario
     g_VacHistorico.CompareMode = vbTextCompare
 
     Dim wsConfig As Worksheet
     On Error Resume Next
     Set wsConfig = ThisWorkbook.Worksheets("Config")
     On Error GoTo ConfigError
-
+    
     If wsConfig Is Nothing Then
         MsgBox "Error Crítico: La hoja 'Config' no fue encontrada.", vbCritical
         LoadConfiguration = False
         Exit Function
     End If
-
+    
     'Cargar nombres de hojas
     ReadTable wsConfig, "tbl_NombresHojas", "Key", "Value"
-
+    
     'Validar que SH_HIST exista en la config
     If Not g_Config.Exists("SH_HIST") Then
         g_Config.Add "SH_HIST", "historico_incidencias"
     End If
-
+    
     'Cargar mapeo de columnas y parámetros
     ReadTable wsConfig, "tbl_MapeoColumnas", "Hoja", "Key", "Columna"
     ReadTable wsConfig, "tbl_Parametros", "Key", "Value"
     ReadIncidenceTable wsConfig, "tbl_TiposIncidencia"
+    
+    ' --- NUEVO: Cargar el histórico de vacaciones ---
     ReadVacHistorico wsConfig, "tbl_Vacaciones_Historico"
-
+    
     LoadConfiguration = True
     Exit Function
-
+    
 ConfigError:
     MsgBox "Error al leer la hoja 'Config'." & vbCrLf & "Error: " & Err.Description, vbCritical
     LoadConfiguration = False
 End Function
-
-Private Sub ReadVacHistorico(ws As Worksheet, tableName As String)
-    On Error Resume Next
-    Dim lo As ListObject
-    Set lo = ws.ListObjects(tableName)
-    If lo Is Nothing Then Exit Sub ' Si la tabla no existe, no hacer nada
-
-    Dim r As Long
-    Dim noNom As String, nombre As String, dias As Long
-    Dim key As String
-
-    Dim idxNom As Long: idxNom = GetColIndex(lo, "No_Nomina")
-    Dim idxNombre As Long: idxNombre = GetColIndex(lo, "Nombre")
-    Dim idxDias As Long: idxDias = GetColIndex(lo, "Dias_Historicos")
-
-    If idxDias = 0 Then Exit Sub ' Si no está la columna de días, no podemos hacer nada
-
-    For r = 1 To lo.ListRows.count
-        noNom = NomKey(lo.DataBodyRange(r, idxNom).Value)
-        nombre = Trim(CStr(lo.DataBodyRange(r, idxNombre).Value))
-        dias = CLng(ToDouble(lo.DataBodyRange(r, idxDias).Value))
-
-        If Len(noNom) > 0 Then
-            key = noNom
-        Else
-            key = nombre
-        End If
-
-        If Len(key) > 0 And Not g_VacHistorico.Exists(key) Then
-            g_VacHistorico.Add key, dias
-        End If
-    Next r
-End Sub
 
 ' --- FUNCIÓN ReadTable (CORREGIDA) ---
 ' Todas las variables se declaran al inicio de la función
@@ -726,7 +695,7 @@ Private Sub ReadTable(ws As Worksheet, tableName As String, ParamArray keysAndVa
     Dim r As Long
     Dim k As String, v As Variant
     Dim hojaCol As String, idxHoja As Long, hoja As String
-
+    
     On Error Resume Next
     Set lo = ws.ListObjects(tableName)
     On Error GoTo 0
@@ -734,12 +703,12 @@ Private Sub ReadTable(ws As Worksheet, tableName As String, ParamArray keysAndVa
         Err.Raise vbObjectError, "ReadTable", "La tabla '" & tableName & "' no se encontró."
         Exit Sub
     End If
-
+    
     'Uso: ReadTable(ws, "tbl_Parametros", "Key", "Value")
     If UBound(keysAndValues) = 1 Then
         keyCol = CStr(keysAndValues(0))
         valCol = CStr(keysAndValues(1))
-
+        
         idxKey = GetColIndex(lo, keyCol)
         idxVal = GetColIndex(lo, valCol)
         If idxKey = 0 Then
@@ -750,7 +719,7 @@ Private Sub ReadTable(ws As Worksheet, tableName As String, ParamArray keysAndVa
             Err.Raise vbObjectError, "ReadTable", "El encabezado '" & valCol & "' no se encontró en la tabla '" & tableName & "'."
             Exit Sub
         End If
-
+        
         For r = 1 To lo.ListRows.count
             k = CStr(lo.DataBodyRange(r, idxKey).Value)
             v = lo.DataBodyRange(r, idxVal).Value
@@ -758,13 +727,13 @@ Private Sub ReadTable(ws As Worksheet, tableName As String, ParamArray keysAndVa
                 g_Config.Add k, v
             End If
         Next r
-
+        
     'Uso: ReadTable(ws, "tbl_MapeoColumnas", "Hoja", "Key", "Columna")
     ElseIf UBound(keysAndValues) = 2 Then
         hojaCol = CStr(keysAndValues(0))
         keyCol = CStr(keysAndValues(1))
         valCol = CStr(keysAndValues(2))
-
+        
         idxHoja = GetColIndex(lo, hojaCol)
         idxKey = GetColIndex(lo, keyCol)
         idxVal = GetColIndex(lo, valCol)
@@ -802,16 +771,16 @@ Private Sub ReadIncidenceTable(ws As Worksheet, tableName As String)
     Dim r As Long
     Dim props As Object
     Dim abrev As String, key As String
-
+    
     On Error Resume Next
     Set lo = ws.ListObjects(tableName)
     On Error GoTo 0
-
+    
     If lo Is Nothing Then
         Err.Raise vbObjectError, "ReadIncidenceTable", "La tabla '" & tableName & "' no se encontró."
         Exit Sub
     End If
-
+    
     idxTipo = GetColIndex(lo, "Tipo_Registrado")
     idxAbrev = GetColIndex(lo, "Abreviatura_Reporte")
     idxColor = GetColIndex(lo, "ColorRGB")
@@ -868,6 +837,51 @@ Private Sub ReadIncidenceTable(ws As Worksheet, tableName As String)
         End If
     Next r
 End Sub
+
+' --- NUEVA FUNCIÓN ---
+' Lee la tabla de histórico de vacaciones y la carga en g_VacHistorico
+Private Sub ReadVacHistorico(ws As Worksheet, tableName As String)
+    Dim lo As ListObject
+    Dim idxNom As Long, idxNombre As Long, idxDias As Long
+    Dim r As Long
+    Dim noNom As String, nombre As String, dias As Long
+    Dim empKey As String
+
+    On Error Resume Next
+    Set lo = ws.ListObjects(tableName)
+    On Error GoTo 0
+    
+    If lo Is Nothing Then
+        MsgBox "Advertencia: No se encontró la tabla '" & tableName & "' en la hoja 'Config'. El histórico de vacaciones no se cargará.", vbExclamation
+        Exit Sub
+    End If
+
+    idxNom = GetColIndex(lo, "No_Nomina")
+    idxNombre = GetColIndex(lo, "Nombre")
+    idxDias = GetColIndex(lo, "Dias_Historicos")
+
+    If idxNom = 0 Or idxNombre = 0 Or idxDias = 0 Then
+        MsgBox "Error en 'Config': La tabla '" & tableName & "' debe tener las columnas 'No_Nomina', 'Nombre', y 'Dias_Historicos'.", vbCritical
+        Exit Sub
+    End If
+    
+    For r = 1 To lo.ListRows.count
+        noNom = NomKey(lo.DataBodyRange(r, idxNom).Value)
+        nombre = Trim(CStr(lo.DataBodyRange(r, idxNombre).Value))
+        dias = CLng(ToDouble(lo.DataBodyRange(r, idxDias).Value))
+        
+        If Len(noNom) > 0 Then
+            empKey = noNom
+        Else
+            empKey = nombre
+        End If
+        
+        If Len(empKey) > 0 And Not g_VacHistorico.Exists(empKey) Then
+            g_VacHistorico.Add empKey, dias
+        End If
+    Next r
+End Sub
+
 
 Private Function GetColIndex(lo As ListObject, colName As String) As Long
     On Error Resume Next
@@ -1125,25 +1139,25 @@ End Function
 Private Function RangoDatos(ByVal ws As Worksheet) As Variant
     Dim ultFila As Long, ultCol As Long
     ultFila = LastUsedRow(ws)
-
+    
     If ultFila < 2 Then
         RangoDatos = Empty
         Exit Function
     End If
-
+    
     ultCol = ws.Cells(1, ws.Columns.count).End(xlToLeft).Column
     If ultCol < 1 Then ultCol = 1
-
+    
     ' --- INICIO DE CORRECCIÓN ---
     Dim dataRange As Range
     Set dataRange = ws.Range(ws.Cells(2, 1), ws.Cells(ultFila, ultCol))
-
+    
     If ultFila = 2 Then
         ' Si solo hay una fila, Excel devuelve un Array 1D.
         ' Debemos forzarlo a ser un Array 2D (Base 1).
         Dim data As Variant: data = dataRange.Value
         Dim arr As Variant
-
+        
         If Not IsArray(data) Then
             ' Caso 1: Una sola celda (A2)
             ReDim arr(1 To 1, 1 To 1)
@@ -1182,13 +1196,13 @@ Private Function FindAltaDateInWeek(incArr As Variant, noNomKey As String, nombr
     FindAltaDateInWeek = 0
     If IsEmpty(incArr) Then Exit Function
     Dim i As Long, f As Date, incProps As Object
-
+    
     ' --- INICIO FIX RANGEDATOS 1 FILA ---
     Dim numDims As Integer
     On Error Resume Next
     numDims = UBound(incArr, 2)
     On Error GoTo 0
-
+    
     If numDims = 0 And LBound(incArr, 1) = 1 And UBound(incArr, 1) >= g_Config("INC_COL_TIPO") Then
         ' Si es un array 1D (una fila), re-dimensionar a 2D (1 fila, N columnas)
         Dim tempArr As Variant
@@ -1202,7 +1216,7 @@ Private Function FindAltaDateInWeek(incArr As Variant, noNomKey As String, nombr
         Exit Function
     End If
     ' --- FIN FIX ---
-
+    
     For i = LBound(incArr, 1) To UBound(incArr, 1)
         Dim incNominaKey As String: incNominaKey = NomKey(incArr(i, g_Config("INC_COL_NOM")))
         Dim incNombre As String: incNombre = Trim(CStr(incArr(i, g_Config("INC_COL_NOMBRE"))))
@@ -1295,13 +1309,13 @@ Private Function CalcularHorasExtraDiaEspecifico(incArr As Variant, ByVal noNomK
         Exit Function
     End If
     Dim incProps As Object
-
+    
     ' --- INICIO FIX RANGEDATOS 1 FILA ---
     Dim numDims As Integer
     On Error Resume Next
     numDims = UBound(incArr, 2)
     On Error GoTo 0
-
+    
     If numDims = 0 And LBound(incArr, 1) = 1 And UBound(incArr, 1) >= g_Config("INC_COL_TIPO") Then
         ' Si es un array 1D (una fila), re-dimensionar a 2D (1 fila, N columnas)
         Dim tempArr As Variant
@@ -1316,13 +1330,13 @@ Private Function CalcularHorasExtraDiaEspecifico(incArr As Variant, ByVal noNomK
         Exit Function
     End If
     ' --- FIN FIX ---
-
+    
     For i = LBound(incArr, 1) To UBound(incArr, 1)
         Dim incNominaKey As String, incNombre As String, esMatch As Boolean
         
         incNominaKey = NomKey(incArr(i, g_Config("INC_COL_NOM")))
         incNombre = Trim(CStr(incArr(i, g_Config("INC_COL_NOMBRE"))))
-
+        
         esMatch = False
         If Len(noNomKey) > 0 And noNomKey = incNominaKey Then
             esMatch = True
@@ -1408,7 +1422,7 @@ Private Sub ActualizarHistoricoIncidencias(incArr As Variant, histArr As Variant
     On Error Resume Next
     numDims = UBound(incArr, 2)
     On Error GoTo 0
-
+    
     If numDims = 0 And LBound(incArr, 1) = 1 And UBound(incArr, 1) >= g_Config("INC_COL_TIPO") Then
         ' Si es un array 1D (una fila), re-dimensionar a 2D (1 fila, N columnas)
         Dim i As Long
@@ -1423,13 +1437,14 @@ Private Sub ActualizarHistoricoIncidencias(incArr As Variant, histArr As Variant
         Exit Sub
     End If
     ' --- FIN FIX ---
-
+    
     ' 2. Añadir los nuevos registros (SOLO INCIDENCIAS REALES, NO HX)
     ultHist = LastUsedRow(wsHist)
+    Dim i As Long
     For i = LBound(incArr, 1) To UBound(incArr, 1)
         Dim tipoInc As String, incProps As Object, abreviatura As String
         Dim cant As Long, f As Date, TieneSabado As Boolean
-
+        
         tipoInc = CStr(incArr(i, g_Config("INC_COL_TIPO")))
         
         If Len(Trim(tipoInc)) > 0 Then
@@ -1497,12 +1512,12 @@ Private Function TieneSabadoEmpleado(ByVal nombreEmp As String) As Boolean
     On Error Resume Next
     Set wsBase = Worksheets(g_Config("SH_BASE"))
     On Error GoTo 0
-
+    
     If wsBase Is Nothing Then
         TieneSabadoEmpleado = False
         Exit Function
     End If
-
+    
     Dim r As Long
     For r = g_Config("INICIO_FILA_EMPLEADOS") To LastUsedRow(wsBase)
         If Trim(CStr(wsBase.Cells(r, g_Config("BASE_COL_NOMBRE")).Value)) = nombreEmp Then
@@ -1564,12 +1579,12 @@ Private Sub ActualizarReporteMensual(histArr As Variant, mondayDate As Date)
     Dim mes As Long: mes = Month(mondayDate)
     Dim anio As Long: anio = Year(mondayDate)
     Dim nombreHoja As String: nombreHoja = "Reporte_Inc_" & Format(mondayDate, "mmm-yyyy")
-
+    
     Dim wsRep As Worksheet
     On Error Resume Next
     Set wsRep = ThisWorkbook.Worksheets(nombreHoja)
     On Error GoTo 0
-
+    
     ' 2. Crear o Limpiar la hoja
     If wsRep Is Nothing Then
         Set wsRep = ThisWorkbook.Worksheets.Add(After:=ThisWorkbook.Worksheets(g_Config("SH_REP")))
@@ -1577,24 +1592,24 @@ Private Sub ActualizarReporteMensual(histArr As Variant, mondayDate As Date)
     Else
         wsRep.Cells.Clear
     End If
-
-    If IsEmpty(histArr) Then Exit Sub
-
+    
+    If IsEmpty(histArr) Then Exit Function
+    
     ' 3. Filtrar el Histórico solo para este mes y año
     Dim dictFechas As Object: Set dictFechas = CreateObject("Scripting.Dictionary")
     Dim dictEmpleados As Object: Set dictEmpleados = CreateObject("Scripting.Dictionary")
-
+    
     For i = LBound(histArr, 1) To UBound(histArr, 1)
         If IsDate(histArr(i, 1)) Then
             f = CDate(histArr(i, 1))
-
+            
             ' Filtrar por Mes y Año
             If Month(f) = mes And Year(f) = anio Then
                 noNom = NomKey(histArr(i, 2))
                 nombre = Trim(CStr(histArr(i, 3)))
                 tipoInc = CStr(histArr(i, 4))
                 Set incProps = GetIncidenceProps(tipoInc)
-
+                
                 If Not incProps Is Nothing Then
                     abrev = incProps("Abreviatura_Reporte")
                     ' OMITIR HX (ya están filtradas al guardar, pero doble chequeo)
@@ -1613,13 +1628,13 @@ Private Sub ActualizarReporteMensual(histArr As Variant, mondayDate As Date)
             End If
         End If
     Next i
-
-    If dictEmpleados.count = 0 Then Exit Sub
-
+    
+    If dictEmpleados.count = 0 Then Exit Function
+    
     ' 4. Ordenar las Fechas
     Dim fechasOrdenadas As Variant: fechasOrdenadas = dictFechas.Keys
     BubbleSort fechasOrdenadas
-
+    
     ' 5. Escribir Encabezados
     wsRep.Cells(1, 1).Value = "No Nomina"
     wsRep.Cells(1, 2).Value = "Nombre"
@@ -1634,7 +1649,7 @@ Private Sub ActualizarReporteMensual(histArr As Variant, mondayDate As Date)
     r = 2
     Dim dictFilas As Object: Set dictFilas = CreateObject("Scripting.Dictionary")
     dictFilas.CompareMode = vbTextCompare
-
+    
     For Each k In dictEmpleados.Keys
         wsRep.Cells(r, 1).Value = dictEmpleados(k)(0) ' No Nomina
         wsRep.Cells(r, 2).Value = dictEmpleados(k)(1) ' Nombre
@@ -1646,21 +1661,21 @@ Private Sub ActualizarReporteMensual(histArr As Variant, mondayDate As Date)
     For i = LBound(histArr, 1) To UBound(histArr, 1)
         If IsDate(histArr(i, 1)) Then
             f = CDate(histArr(i, 1))
-
+            
             ' Filtrar por Mes y Año (de nuevo)
             If Month(f) = mes And Year(f) = anio Then
                 noNom = NomKey(histArr(i, 2))
                 nombre = Trim(CStr(histArr(i, 3)))
-
+                
                 If Len(noNom) > 0 Then empKey = noNom Else empKey = nombre
-
+                
                 If dictFilas.Exists(empKey) Then ' Asegurarse que el empleado está en la lista
                     r = dictFilas(empKey) ' Fila
-
+                    
                     ' Comprobar si la fecha existe en las columnas (puede no existir si el histArr está vacío)
                     If dictFechas.Exists(CLng(f)) Then
                         c = dictFechas(CLng(f)) ' Columna
-
+                        
                         Set incProps = GetIncidenceProps(CStr(histArr(i, 4)))
                         If Not incProps Is Nothing Then
                             abrev = incProps("Abreviatura_Reporte")
@@ -1674,7 +1689,7 @@ Private Sub ActualizarReporteMensual(histArr As Variant, mondayDate As Date)
             End If
         End If
     Next i
-
+    
     ' 8. Formato Final
     wsRep.Columns("A").ColumnWidth = 10
     wsRep.Columns("B").ColumnWidth = 35
@@ -1708,39 +1723,44 @@ Private Sub ActualizarControlVacaciones(wsVac As Worksheet, histArr As Variant)
     Dim incProps As Object
     Dim noNom As String, nombre As String, tipoInc As String
     Dim cant As Long, empKey As String
+    Dim diasNuevos As Long, diasHistoricos As Long
     ' --- FIN DE CORRECCIÓN ---
 
-    If IsEmpty(histArr) Then Exit Sub
+    If IsEmpty(histArr) Then
+        ' Si el histórico está vacío, al menos procesar los días por derecho
+    End If
     
-    ' 1. Crear un diccionario de vacaciones disfrutadas
+    ' 1. Crear un diccionario de vacaciones disfrutadas (SOLO NUEVAS)
     Dim dictVac As Object: Set dictVac = CreateObject("Scripting.Dictionary")
     dictVac.CompareMode = vbTextCompare
     
-    For i = LBound(histArr, 1) To UBound(histArr, 1)
-        tipoInc = CStr(histArr(i, 4)) ' Col 4 = Tipo_Incidencia
-        Set incProps = GetIncidenceProps(tipoInc)
-        
-        If Not incProps Is Nothing Then
-            If incProps("Abreviatura_Reporte") = "V" Then
-                noNom = NomKey(histArr(i, 2))
-                nombre = Trim(CStr(histArr(i, 3)))
-                cant = CLng(ToDouble(histArr(i, 5))) ' Col 5 = Cantidad
-
-                If Len(noNom) > 0 Then empKey = noNom Else empKey = nombre
-
-                If dictVac.Exists(empKey) Then
-                    dictVac(empKey) = dictVac(empKey) + cant
-                Else
-                    dictVac.Add empKey, cant
+    If Not IsEmpty(histArr) Then
+        For i = LBound(histArr, 1) To UBound(histArr, 1)
+            tipoInc = CStr(histArr(i, 4)) ' Col 4 = Tipo_Incidencia
+            Set incProps = GetIncidenceProps(tipoInc)
+            
+            If Not incProps Is Nothing Then
+                If incProps("Abreviatura_Reporte") = "V" Then
+                    noNom = NomKey(histArr(i, 2))
+                    nombre = Trim(CStr(histArr(i, 3)))
+                    cant = CLng(ToDouble(histArr(i, 5))) ' Col 5 = Cantidad
+                    
+                    If Len(noNom) > 0 Then empKey = noNom Else empKey = nombre
+                    
+                    If dictVac.Exists(empKey) Then
+                        dictVac(empKey) = dictVac(empKey) + cant
+                    Else
+                        dictVac.Add empKey, cant
+                    End If
                 End If
             End If
-        End If
-    Next i
-
+        Next i
+    End If
+    
     ' 2. Recorrer la hoja de control_vacaciones y actualizarla
     Dim ultFila As Long
     ultFila = LastUsedRow(wsVac)
-
+    
     For r = 2 To ultFila
         noNom = NomKey(wsVac.Cells(r, g_Config("VAC_COL_NOM")).Value)
         nombre = Trim(CStr(wsVac.Cells(r, g_Config("VAC_COL_NOMBRE")).Value))
@@ -1748,29 +1768,30 @@ Private Sub ActualizarControlVacaciones(wsVac As Worksheet, histArr As Variant)
         
         If IsDate(wsVac.Cells(r, g_Config("VAC_COL_FECHA_ANTIG")).Value) Then
             fechaAntig = CDate(wsVac.Cells(r, g_Config("VAC_COL_FECHA_ANTIG")).Value)
-
-            ' A. Actualizar Vacaciones por Derecho (Col E en tu captura)
+            
+            ' A. Actualizar Vacaciones por Derecho (Col E)
             wsVac.Cells(r, g_Config("VAC_COL_DERECHO")).Value = CalcularDiasDerecho(fechaAntig)
-
-            ' B. Actualizar Vacaciones Disfrutadas (Col D en tu captura)
+            
+            ' B. Actualizar Vacaciones Disfrutadas (Col D)
             If Len(noNom) > 0 Then empKey = noNom Else empKey = nombre
-
-            Dim diasHistoricos As Long
-            If g_VacHistorico.Exists(empKey) Then
-                diasHistoricos = g_VacHistorico(empKey)
-            Else
-                diasHistoricos = 0
-            End If
-
-            Dim diasNuevos As Long
+            
+            ' B1. Obtener Días Nuevos (del historico_incidencias)
             If dictVac.Exists(empKey) Then
                 diasNuevos = dictVac(empKey)
             Else
                 diasNuevos = 0
             End If
-
+            
+            ' B2. Obtener Días Históricos (de Config)
+            If g_VacHistorico.Exists(empKey) Then
+                diasHistoricos = g_VacHistorico(empKey)
+            Else
+                diasHistoricos = 0
+            End If
+            
+            ' B3. Escribir la suma
             wsVac.Cells(r, g_Config("VAC_COL_DISFRUTADAS")).Value = diasHistoricos + diasNuevos
-
+            
             ' C. Actualizar Pendientes (Col F) - Asumiendo que tiene fórmula
             If wsVac.Cells(r, g_Config("VAC_COL_PENDIENTES")).Formula = "" Then
                  wsVac.Cells(r, g_Config("VAC_COL_PENDIENTES")).Formula = "=" & ColLetra(g_Config("VAC_COL_DERECHO")) & r & "-" & ColLetra(g_Config("VAC_COL_DISFRUTADAS")) & r
@@ -1796,7 +1817,7 @@ Private Function CalcularDiasDerecho(fechaAntig As Date) As Long
         CalcularDiasDerecho = 0
         Exit Function
     End If
-
+    
     ' Tabla LFT 2023 (Días por año)
     Dim diasPorAnio(1 To 35) As Long
     diasPorAnio(1) = 12
@@ -1820,7 +1841,7 @@ Private Function CalcularDiasDerecho(fechaAntig As Date) As Long
             totalAcumulado = totalAcumulado + diasPorAnio(i)
         End If
     Next i
-
+    
     CalcularDiasDerecho = totalAcumulado
 End Function
 
