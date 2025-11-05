@@ -212,7 +212,7 @@ Public Sub GenerarReporteSemanal()
         If incentivoBase > 0 Then
             Dim valorDiarioIncentivo As Double
             If diasLaborables > 0 Then valorDiarioIncentivo = incentivoBase / diasLaborables Else valorDiarioIncentivo = 0
-            Dim ausenciasIncentivo As Long: ausenciasIncentivo = ContarAusenciasParaIncentivo(wsRep, repFila)
+            Dim ausenciasIncentivo As Long: ausenciasIncentivo = ContarAusenciasParaIncentivo(wsRep, repFila, diasLaborables)
             Dim incentivoCalc As Double: incentivoCalc = incentivoBase - (valorDiarioIncentivo * ausenciasIncentivo)
             If incentivoCalc > 0 Then wsRep.Cells(repFila, g_Config("COL_INCENT")).Value = incentivoCalc Else wsRep.Cells(repFila, g_Config("COL_INCENT")).ClearContents
         End If
@@ -222,7 +222,7 @@ Public Sub GenerarReporteSemanal()
         If bonoBase > 0 Then
             Dim valorDiarioBono As Double
             If diasLaborables > 0 Then valorDiarioBono = bonoBase / diasLaborables Else valorDiarioBono = 0
-            Dim ausencias As Long: ausencias = ContarAusenciasParaBono(wsRep, repFila)
+            Dim ausencias As Long: ausencias = ContarAusenciasParaBono(wsRep, repFila, diasLaborables)
             Dim bonoCalc As Double: bonoCalc = bonoBase - (valorDiarioBono * ausencias)
             If bonoCalc > 0 Then wsRep.Cells(repFila, g_Config("COL_BONO")).Value = Round(bonoCalc, 0) Else wsRep.Cells(repFila, g_Config("COL_BONO")).ClearContents
         End If
@@ -961,10 +961,10 @@ Private Function IsTurnoNocturno(ByVal horarioLV As Variant) As Boolean
 End Function
 
 
-Private Function ContarAusenciasParaBono(ByVal ws As Worksheet, ByVal repFila As Long) As Long
+Private Function ContarAusenciasParaBono(ByVal ws As Worksheet, ByVal repFila As Long, ByVal diasLaborables As Long) As Long
     Dim d As Long, count As Long
     count = 0
-    For d = 0 To 5 ' Lunes a Sábado
+    For d = 0 To diasLaborables - 1
         Dim val As String: val = UCase$(Trim$(CStr(ws.Cells(repFila, g_Config("COL_L") + d).Value)))
         
         If val <> "" And val <> "A" And val <> "D" Then
@@ -979,10 +979,10 @@ Private Function ContarAusenciasParaBono(ByVal ws As Worksheet, ByVal repFila As
     ContarAusenciasParaBono = count
 End Function
 
-Private Function ContarAusenciasParaIncentivo(ByVal ws As Worksheet, ByVal repFila As Long) As Long
+Private Function ContarAusenciasParaIncentivo(ByVal ws As Worksheet, ByVal repFila As Long, ByVal diasLaborables As Long) As Long
     Dim d As Long, count As Long
     count = 0
-    For d = 0 To 5 ' Lunes a Sábado
+    For d = 0 To diasLaborables - 1
         Dim val As String: val = UCase$(Trim$(CStr(ws.Cells(repFila, g_Config("COL_L") + d).Value)))
         
         If val <> "" And val <> "A" And val <> "D" Then
