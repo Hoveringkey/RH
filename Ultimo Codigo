@@ -1797,27 +1797,50 @@ Private Function CalcularDiasDerecho(fechaAntig As Date) As Long
         Exit Function
     End If
 
-    ' Tabla LFT 2023 (Días por año)
-    Dim diasPorAnio(1 To 35) As Long
-    diasPorAnio(1) = 12
-    diasPorAnio(2) = 14
-    diasPorAnio(3) = 16
-    diasPorAnio(4) = 18
-    diasPorAnio(5) = 20
+    ' Tablas LFT (Días por año)
+    Dim diasPorAnioNuevo(1 To 35) As Long
+    diasPorAnioNuevo(1) = 12
+    diasPorAnioNuevo(2) = 14
+    diasPorAnioNuevo(3) = 16
+    diasPorAnioNuevo(4) = 18
+    diasPorAnioNuevo(5) = 20
     Dim i As Long
-    For i = 6 To 10: diasPorAnio(i) = 22: Next i
-    For i = 11 To 15: diasPorAnio(i) = 24: Next i
-    For i = 16 To 20: diasPorAnio(i) = 26: Next i
-    For i = 21 To 25: diasPorAnio(i) = 28: Next i
-    For i = 26 To 30: diasPorAnio(i) = 30: Next i
-    For i = 31 To 35: diasPorAnio(i) = 32: Next i
+    For i = 6 To 10: diasPorAnioNuevo(i) = 22: Next i
+    For i = 11 To 15: diasPorAnioNuevo(i) = 24: Next i
+    For i = 16 To 20: diasPorAnioNuevo(i) = 26: Next i
+    For i = 21 To 25: diasPorAnioNuevo(i) = 28: Next i
+    For i = 26 To 30: diasPorAnioNuevo(i) = 30: Next i
+    For i = 31 To 35: diasPorAnioNuevo(i) = 32: Next i
+
+    Dim diasPorAnioAntiguo(1 To 35) As Long
+    diasPorAnioAntiguo(1) = 6
+    diasPorAnioAntiguo(2) = 8
+    diasPorAnioAntiguo(3) = 10
+    diasPorAnioAntiguo(4) = 12
+    For i = 5 To 9: diasPorAnioAntiguo(i) = 14: Next i
+    For i = 10 To 14: diasPorAnioAntiguo(i) = 16: Next i
+    For i = 15 To 19: diasPorAnioAntiguo(i) = 18: Next i
+    For i = 20 To 24: diasPorAnioAntiguo(i) = 20: Next i
+    For i = 25 To 29: diasPorAnioAntiguo(i) = 22: Next i
+    For i = 30 To 34: diasPorAnioAntiguo(i) = 24: Next i
+    diasPorAnioAntiguo(35) = 24
 
     Dim totalAcumulado As Long: totalAcumulado = 0
+    Dim aniversarioAnio As Long
     For i = 1 To anios
-        If i > 35 Then
-            totalAcumulado = totalAcumulado + 32 ' Máximo LFT
+        aniversarioAnio = Year(DateAdd("yyyy", i - 1, fechaAntig))
+        If aniversarioAnio <= 2022 Then
+            If i > 35 Then
+                totalAcumulado = totalAcumulado + 24 ' Máximo LFT anterior
+            Else
+                totalAcumulado = totalAcumulado + diasPorAnioAntiguo(i)
+            End If
         Else
-            totalAcumulado = totalAcumulado + diasPorAnio(i)
+            If i > 35 Then
+                totalAcumulado = totalAcumulado + 32 ' Máximo LFT vigente desde 2023
+            Else
+                totalAcumulado = totalAcumulado + diasPorAnioNuevo(i)
+            End If
         End If
     Next i
 
