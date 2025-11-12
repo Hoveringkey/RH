@@ -1798,27 +1798,52 @@ Private Function CalcularDiasDerecho(fechaAntig As Date) As Long
     End If
 
     ' Tabla LFT 2023 (Días por año)
-    Dim diasPorAnio(1 To 35) As Long
-    diasPorAnio(1) = 12
-    diasPorAnio(2) = 14
-    diasPorAnio(3) = 16
-    diasPorAnio(4) = 18
-    diasPorAnio(5) = 20
+    Dim diasLFT2023(1 To 35) As Long
+    diasLFT2023(1) = 12
+    diasLFT2023(2) = 14
+    diasLFT2023(3) = 16
+    diasLFT2023(4) = 18
+    diasLFT2023(5) = 20
     Dim i As Long
-    For i = 6 To 10: diasPorAnio(i) = 22: Next i
-    For i = 11 To 15: diasPorAnio(i) = 24: Next i
-    For i = 16 To 20: diasPorAnio(i) = 26: Next i
-    For i = 21 To 25: diasPorAnio(i) = 28: Next i
-    For i = 26 To 30: diasPorAnio(i) = 30: Next i
-    For i = 31 To 35: diasPorAnio(i) = 32: Next i
+    For i = 6 To 10: diasLFT2023(i) = 22: Next i
+    For i = 11 To 15: diasLFT2023(i) = 24: Next i
+    For i = 16 To 20: diasLFT2023(i) = 26: Next i
+    For i = 21 To 25: diasLFT2023(i) = 28: Next i
+    For i = 26 To 30: diasLFT2023(i) = 30: Next i
+    For i = 31 To 35: diasLFT2023(i) = 32: Next i
+
+    ' Tabla LFT anterior a 2023 (Días por año)
+    Dim diasLFTAnterior(1 To 25) As Long
+    diasLFTAnterior(1) = 6
+    diasLFTAnterior(2) = 8
+    diasLFTAnterior(3) = 10
+    diasLFTAnterior(4) = 12
+    diasLFTAnterior(5) = 14
+    diasLFTAnterior(6) = 16
+    For i = 7 To 11: diasLFTAnterior(i) = 18: Next i
+    For i = 12 To 16: diasLFTAnterior(i) = 20: Next i
+    For i = 17 To 21: diasLFTAnterior(i) = 22: Next i
+    For i = 22 To 25: diasLFTAnterior(i) = 24: Next i
 
     Dim totalAcumulado As Long: totalAcumulado = 0
+    Dim aniversarioAnio As Long
+    Dim diasAnio As Long
     For i = 1 To anios
-        If i > 35 Then
-            totalAcumulado = totalAcumulado + 32 ' Máximo LFT
+        aniversarioAnio = Year(DateAdd("yyyy", i, fechaAntig))
+        If aniversarioAnio >= 2023 Then
+            If i > 35 Then
+                diasAnio = 32 ' Máximo LFT 2023
+            Else
+                diasAnio = diasLFT2023(i)
+            End If
         Else
-            totalAcumulado = totalAcumulado + diasPorAnio(i)
+            If i > 25 Then
+                diasAnio = 24 ' Máximo LFT anterior
+            Else
+                diasAnio = diasLFTAnterior(i)
+            End If
         End If
+        totalAcumulado = totalAcumulado + diasAnio
     Next i
 
     CalcularDiasDerecho = totalAcumulado
