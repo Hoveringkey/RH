@@ -1702,6 +1702,45 @@ End Sub
 '======== CONTROL DE VACACIONES ===============
 '==============================================
 
+Private Function GetHardcodedVacationDays() As Object
+    Set GetHardcodedVacationDays = CreateObject("Scripting.Dictionary")
+    GetHardcodedVacationDays.CompareMode = vbTextCompare
+
+    GetHardcodedVacationDays.Add "Carrillo Valdez Ernesto", 210
+    GetHardcodedVacationDays.Add "Olvera Carmona Santa Isabel", 210
+    GetHardcodedVacationDays.Add "Plascencia Lopez Miguel Angel", 210
+    GetHardcodedVacationDays.Add "Mora Ibarra Ricardo", 100
+    GetHardcodedVacationDays.Add "Magaña Elizondo Matilde", 144
+    GetHardcodedVacationDays.Add "Ramirez Avila Edgar Misael", 100
+    GetHardcodedVacationDays.Add "Ramirez Canales Hugo Cesar", 100
+    GetHardcodedVacationDays.Add "Borceguin Lucano Virginia", 68
+    GetHardcodedVacationDays.Add "Hernandez Rodriguez Juan Carlos", 116
+    GetHardcodedVacationDays.Add "Chavez Navarrete Cristina", 100
+    GetHardcodedVacationDays.Add "Reyes Martinez Esmeralda Rubi", 100
+    GetHardcodedVacationDays.Add "Aranda Estrada Raul Alejandro", 78
+    GetHardcodedVacationDays.Add "Ramirez Davila Ana Marilu", 84
+    GetHardcodedVacationDays.Add "Ruiz Castellanos Mario Alberto", 68
+    GetHardcodedVacationDays.Add "Guerrero Flores Jorge", 130
+    GetHardcodedVacationDays.Add "Perez Sanchez Moises Valentin", 54
+    GetHardcodedVacationDays.Add "Ramirez Davila Claudia Maribel", 42
+    GetHardcodedVacationDays.Add "Ibarra Ramirez Olga Lidia", 42
+    GetHardcodedVacationDays.Add "Lopez Campos Jessica Mayde", 40
+    GetHardcodedVacationDays.Add "Dominguez Duran Maria Guadalupe", 30
+    GetHardcodedVacationDays.Add "Perez Barajas Leticia", 26
+    GetHardcodedVacationDays.Add "Sanchez Ista Jose Manuel", 12
+    GetHardcodedVacationDays.Add "Almaguer Balderrama Sandra Violeta", 12
+    GetHardcodedVacationDays.Add "Arciga Cibrian Margarita", 12
+    GetHardcodedVacationDays.Add "Gallegos Morales Wendy Carolina", 12
+    GetHardcodedVacationDays.Add "Saleme Valdes Jetro", 12
+    GetHardcodedVacationDays.Add "Gutierrez Gomez Yadira Alejandra", 12
+    GetHardcodedVacationDays.Add "Michel Juárez Alexis Abraham", 0
+    GetHardcodedVacationDays.Add "Garcia Bejines Lucia Guadalupe", 0
+    GetHardcodedVacationDays.Add "Flores Sanchez Francisco Josiel", 0
+    GetHardcodedVacationDays.Add "Lujano Hernandez Brenda Guadalupe", 0
+    GetHardcodedVacationDays.Add "López Rapeta Efraín Junior", 0
+    GetHardcodedVacationDays.Add "Borja Montiel Rubi Guadalupe", 0
+End Function
+
 Private Sub ActualizarControlVacaciones(wsVac As Worksheet, histArr As Variant)
     ' --- CORRECCIÓN DE BUG DE ÁMBITO (SCOPE) ---
     Dim i As Long, r As Long
@@ -1750,7 +1789,7 @@ Private Sub ActualizarControlVacaciones(wsVac As Worksheet, histArr As Variant)
             fechaAntig = CDate(wsVac.Cells(r, g_Config("VAC_COL_FECHA_ANTIG")).Value)
 
             ' A. Actualizar Vacaciones por Derecho (Col E en tu captura)
-            wsVac.Cells(r, g_Config("VAC_COL_DERECHO")).Value = CalcularDiasDerecho(fechaAntig)
+            wsVac.Cells(r, g_Config("VAC_COL_DERECHO")).Value = CalcularDiasDerecho(fechaAntig, nombre)
 
             ' B. Actualizar Vacaciones Disfrutadas (Col D en tu captura)
             If Len(noNom) > 0 Then empKey = noNom Else empKey = nombre
@@ -1779,9 +1818,23 @@ Private Sub ActualizarControlVacaciones(wsVac As Worksheet, histArr As Variant)
     Next r
 End Sub
 
-Private Function CalcularDiasDerecho(fechaAntig As Date) As Long
-    ' Calcula el total de días ACUMULADOS por ley (LFT)
-    ' LÓGICA HÍBRIDA CORREGIDA: Basada en años de servicio para coincidir con el ejemplo.
+Private Function CalcularDiasDerecho(fechaAntig As Date, nombreEmp As String) As Long
+    ' LÓGICA NUEVA: Usar valores fijos para empleados existentes.
+    Dim dictHardcoded As Object
+    Set dictHardcoded = GetHardcodedVacationDays()
+
+    Dim cleanName As String
+    cleanName = nombreEmp
+    If Left(cleanName, 2) = "R-" Then
+        cleanName = Mid(cleanName, 3)
+    End If
+
+    If dictHardcoded.Exists(cleanName) Then
+        CalcularDiasDerecho = dictHardcoded(cleanName)
+        Exit Function
+    End If
+
+    ' SI NO SE ENCUENTRA, SE APLICA LA LÓGICA POR DEFECTO (PARA NUEVOS EMPLEADOS)
 
     If fechaAntig > Date Then
         CalcularDiasDerecho = 0
@@ -1799,7 +1852,7 @@ Private Function CalcularDiasDerecho(fechaAntig As Date) As Long
         Exit Function
     End If
 
-    ' --- Definición de Tablas de Vacaciones ---
+    ' --- Definición de Tablas de Vacaciones (SOLO LEY NUEVA) ---
     Dim diasPorAnio_LeyNueva(1 To 35) As Long
     diasPorAnio_LeyNueva(1) = 12
     diasPorAnio_LeyNueva(2) = 14
@@ -1814,42 +1867,16 @@ Private Function CalcularDiasDerecho(fechaAntig As Date) As Long
     For i = 26 To 30: diasPorAnio_LeyNueva(i) = 30: Next i
     For i = 31 To 35: diasPorAnio_LeyNueva(i) = 32: Next i
 
-    Dim diasPorAnio_LeyAntigua(1 To 11) As Long ' Solo necesitamos los primeros 11 años
-    diasPorAnio_LeyAntigua(1) = 6
-    diasPorAnio_LeyAntigua(2) = 8
-    diasPorAnio_LeyAntigua(3) = 10
-    diasPorAnio_LeyAntigua(4) = 12
-    For i = 5 To 9: diasPorAnio_LeyAntigua(i) = 14: Next i
-    For i = 10 To 11: diasPorAnio_LeyAntigua(i) = 16: Next i
-
     Dim totalAcumulado As Long: totalAcumulado = 0
 
-    ' --- Lógica de Cálculo Corregida ---
-    If fechaAntig >= DateSerial(2023, 1, 1) Then
-        ' --- Caso 1: Contratado en o después de 2023 -> Solo Ley Nueva ---
-        For i = 1 To anios
-            If i > 35 Then
-                totalAcumulado = totalAcumulado + 32
-            Else
-                totalAcumulado = totalAcumulado + diasPorAnio_LeyNueva(i)
-            End If
-        Next i
-    Else
-        ' --- Caso 2: Contratado antes de 2023 -> Lógica Híbrida por Años de Servicio ---
-        For i = 1 To anios
-            If i < 12 Then
-                ' Primeros 11 años de servicio -> Usar Ley Antigua
-                totalAcumulado = totalAcumulado + diasPorAnio_LeyAntigua(i)
-            Else
-                ' A partir del año 12 de servicio -> Usar Ley Nueva
-                If i > 35 Then
-                    totalAcumulado = totalAcumulado + 32
-                Else
-                    totalAcumulado = totalAcumulado + diasPorAnio_LeyNueva(i)
-                End If
-            End If
-        Next i
-    End If
+    ' --- Lógica de Cálculo para Nuevos Empleados (Ley 2023) ---
+    For i = 1 To anios
+        If i > 35 Then
+            totalAcumulado = totalAcumulado + 32
+        Else
+            totalAcumulado = totalAcumulado + diasPorAnio_LeyNueva(i)
+        End If
+    Next i
 
     CalcularDiasDerecho = totalAcumulado
 End Function
