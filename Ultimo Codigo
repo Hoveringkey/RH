@@ -1771,19 +1771,26 @@ Private Sub ActualizarControlVacaciones(wsVac As Worksheet, histArr As Variant)
                 Dim antigRegistrada As Long
                 antigRegistrada = CLng(ToDouble(wsVac.Cells(r, g_Config("VAC_COL_ANTIG_ACTUALIZADA")).Value))
 
-                ' Si ha cumplido más años de los que tiene registrados...
-                If aniosCumplidos > antigRegistrada Then
-                    ' ...calcular los días a añadir para el nuevo año y sumarlos
-                    Dim diasParaAgregar As Long
-                    diasParaAgregar = DiasPorAnioCumplido(aniosCumplidos)
-
-                    Dim diasActuales As Long
-                    diasActuales = CLng(ToDouble(wsVac.Cells(r, g_Config("VAC_COL_DERECHO")).Value))
-
-                    wsVac.Cells(r, g_Config("VAC_COL_DERECHO")).Value = diasActuales + diasParaAgregar
-
-                    ' ...y actualizar el registro para no volver a sumar en el futuro
+                ' --- LÓGICA DE INICIALIZACIÓN Y ACTUALIZACIÓN ---
+                If antigRegistrada = 0 Then
+                    ' PRIMERA VEZ: Solo registrar la antigüedad actual como punto de partida.
+                    ' No se suman días en esta ejecución.
                     wsVac.Cells(r, g_Config("VAC_COL_ANTIG_ACTUALIZADA")).Value = aniosCumplidos
+                Else
+                    ' EJECUCIONES FUTURAS: Si ha cumplido más años de los que tiene registrados...
+                    If aniosCumplidos > antigRegistrada Then
+                        ' ...calcular los días a añadir para el nuevo año y sumarlos
+                        Dim diasParaAgregar As Long
+                        diasParaAgregar = DiasPorAnioCumplido(aniosCumplidos)
+
+                        Dim diasActuales As Long
+                        diasActuales = CLng(ToDouble(wsVac.Cells(r, g_Config("VAC_COL_DERECHO")).Value))
+
+                        wsVac.Cells(r, g_Config("VAC_COL_DERECHO")).Value = diasActuales + diasParaAgregar
+
+                        ' ...y actualizar el registro para no volver a sumar en el futuro
+                        wsVac.Cells(r, g_Config("VAC_COL_ANTIG_ACTUALIZADA")).Value = aniosCumplidos
+                    End If
                 End If
             End If
             ' --- FIN NUEVA LÓGICA ---
