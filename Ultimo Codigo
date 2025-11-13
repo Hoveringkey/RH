@@ -271,6 +271,15 @@ siguienteEmpleado:
     AplicarEstiloReporte wsRep, repFila - 1
 
 salida_segura:
+    ' --- OCULTAR COLUMNA AUXILIAR (CON VERIFICACIÓN) ---
+    If Not wsVac Is Nothing Then
+        If g_Config.Exists("VAC_COL_ANTIG_ACTUALIZADA") Then
+            On Error Resume Next ' Suprimir errores si la hoja o columna no existen
+            wsVac.Columns(g_Config("VAC_COL_ANTIG_ACTUALIZADA")).Hidden = True
+            On Error GoTo 0
+        End If
+    End If
+
     If Err.Number <> 0 Then
         MsgBox "Ocurrió un error inesperado." & vbCrLf & _
                "Número: " & Err.Number & vbCrLf & _
@@ -786,7 +795,7 @@ Private Sub ReadTable(ws As Worksheet, tableName As String, ParamArray keysAndVa
             k = CStr(lo.DataBodyRange(r, idxKey).Value)
             v = lo.DataBodyRange(r, idxVal).Value
             'Guardar la clave de columna asociada a su hoja
-            If g_Config.Exists(hoja) And Len(Trim(k)) > 0 Then
+            If Len(Trim(k)) > 0 Then
                 If Not g_Config.Exists(k) Then
                     g_Config.Add k, v
                 End If
@@ -1749,8 +1758,42 @@ Private Sub ActualizarControlVacaciones(wsVac As Worksheet, histArr As Variant)
         If IsDate(wsVac.Cells(r, g_Config("VAC_COL_FECHA_ANTIG")).Value) Then
             fechaAntig = CDate(wsVac.Cells(r, g_Config("VAC_COL_FECHA_ANTIG")).Value)
 
-            ' A. Actualizar Vacaciones por Derecho (Col E en tu captura)
-            wsVac.Cells(r, g_Config("VAC_COL_DERECHO")).Value = CalcularDiasDerecho(fechaAntig)
+            ' --- INICIO NUEVA LÓGICA DE ACTUALIZACIÓN ANUAL ---
+            ' Calcular antigüedad actual
+            Dim aniosCumplidos As Long
+            aniosCumplidos = DateDiff("yyyy", fechaAntig, Date)
+            If DateSerial(Year(Date), Month(fechaAntig), Day(fechaAntig)) > Date Then
+                aniosCumplidos = aniosCumplidos - 1
+            End If
+
+            If aniosCumplidos > 0 Then
+                ' Leer la última antigüedad registrada
+                Dim antigRegistrada As Long
+                antigRegistrada = CLng(ToDouble(wsVac.Cells(r, g_Config("VAC_COL_ANTIG_ACTUALIZADA")).Value))
+
+                ' --- LÓGICA DE INICIALIZACIÓN Y ACTUALIZACIÓN ---
+                If antigRegistrada = 0 Then
+                    ' PRIMERA VEZ: Solo registrar la antigüedad actual como punto de partida.
+                    ' No se suman días en esta ejecución.
+                    wsVac.Cells(r, g_Config("VAC_COL_ANTIG_ACTUALIZADA")).Value = aniosCumplidos
+                Else
+                    ' EJECUCIONES FUTURAS: Si ha cumplido más años de los que tiene registrados...
+                    If aniosCumplidos > antigRegistrada Then
+                        ' ...calcular los días a añadir para el nuevo año y sumarlos
+                        Dim diasParaAgregar As Long
+                        diasParaAgregar = DiasPorAnioCumplido(aniosCumplidos)
+
+                        Dim diasActuales As Long
+                        diasActuales = CLng(ToDouble(wsVac.Cells(r, g_Config("VAC_COL_DERECHO")).Value))
+
+                        wsVac.Cells(r, g_Config("VAC_COL_DERECHO")).Value = diasActuales + diasParaAgregar
+
+                        ' ...y actualizar el registro para no volver a sumar en el futuro
+                        wsVac.Cells(r, g_Config("VAC_COL_ANTIG_ACTUALIZADA")).Value = aniosCumplidos
+                    End If
+                End If
+            End If
+            ' --- FIN NUEVA LÓGICA ---
 
             ' B. Actualizar Vacaciones Disfrutadas (Col D en tu captura)
             If Len(noNom) > 0 Then empKey = noNom Else empKey = nombre
@@ -1779,21 +1822,11 @@ Private Sub ActualizarControlVacaciones(wsVac As Worksheet, histArr As Variant)
     Next r
 End Sub
 
-Private Function CalcularDiasDerecho(fechaAntig As Date) As Long
-    ' Calcula el total de días ACUMULADOS por ley (LFT)
-    If fechaAntig > Date Then
-        CalcularDiasDerecho = 0
-        Exit Function
-    End If
-
-    Dim anios As Long: anios = DateDiff("yyyy", fechaAntig, Date)
-    ' Ajuste por si aún no cumple el aniversario este año
-    If DateSerial(Year(Date), Month(fechaAntig), Day(fechaAntig)) > Date Then
-        anios = anios - 1
-    End If
-
+Private Function DiasPorAnioCumplido(ByVal anios As Long) As Long
+    ' Devuelve los días de vacaciones que corresponden a un año específico
+    ' según la ley de 2023.
     If anios <= 0 Then
-        CalcularDiasDerecho = 0
+        DiasPorAnioCumplido = 0
         Exit Function
     End If
 
@@ -1812,16 +1845,11 @@ Private Function CalcularDiasDerecho(fechaAntig As Date) As Long
     For i = 26 To 30: diasPorAnio(i) = 30: Next i
     For i = 31 To 35: diasPorAnio(i) = 32: Next i
 
-    Dim totalAcumulado As Long: totalAcumulado = 0
-    For i = 1 To anios
-        If i > 35 Then
-            totalAcumulado = totalAcumulado + 32 ' Máximo LFT
-        Else
-            totalAcumulado = totalAcumulado + diasPorAnio(i)
-        End If
-    Next i
-
-    CalcularDiasDerecho = totalAcumulado
+    If anios > 35 Then
+        DiasPorAnioCumplido = 32 ' Máximo LFT
+    Else
+        DiasPorAnioCumplido = diasPorAnio(anios)
+    End If
 End Function
 
 Private Function ColLetra(colNum As Long) As String
