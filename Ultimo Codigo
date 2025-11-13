@@ -272,10 +272,12 @@ siguienteEmpleado:
 
 salida_segura:
     ' --- OCULTAR COLUMNA AUXILIAR (CON VERIFICACIÓN) ---
-    If g_Config.Exists("VAC_COL_ANTIG_ACTUALIZADA") Then
-        On Error Resume Next ' Suprimir errores si la hoja o columna no existen
-        wsVac.Columns(g_Config("VAC_COL_ANTIG_ACTUALIZADA")).Hidden = True
-        On Error GoTo 0
+    If Not wsVac Is Nothing Then
+        If g_Config.Exists("VAC_COL_ANTIG_ACTUALIZADA") Then
+            On Error Resume Next ' Suprimir errores si la hoja o columna no existen
+            wsVac.Columns(g_Config("VAC_COL_ANTIG_ACTUALIZADA")).Hidden = True
+            On Error GoTo 0
+        End If
     End If
 
     If Err.Number <> 0 Then
