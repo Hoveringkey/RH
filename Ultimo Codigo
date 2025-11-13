@@ -271,6 +271,10 @@ siguienteEmpleado:
     AplicarEstiloReporte wsRep, repFila - 1
 
 salida_segura:
+    On Error Resume Next ' Suprimir errores si la hoja o columna no existen
+    wsVac.Columns(g_Config("VAC_COL_ANTIG_ACTUALIZADA")).Hidden = True
+    On Error GoTo 0
+
     If Err.Number <> 0 Then
         MsgBox "Ocurrió un error inesperado." & vbCrLf & _
                "Número: " & Err.Number & vbCrLf & _
@@ -1702,45 +1706,6 @@ End Sub
 '======== CONTROL DE VACACIONES ===============
 '==============================================
 
-Private Function GetHardcodedVacationDays() As Object
-    Set GetHardcodedVacationDays = CreateObject("Scripting.Dictionary")
-    GetHardcodedVacationDays.CompareMode = vbTextCompare
-
-    GetHardcodedVacationDays.Add "Carrillo Valdez Ernesto", 210
-    GetHardcodedVacationDays.Add "Olvera Carmona Santa Isabel", 210
-    GetHardcodedVacationDays.Add "Plascencia Lopez Miguel Angel", 210
-    GetHardcodedVacationDays.Add "Mora Ibarra Ricardo", 100
-    GetHardcodedVacationDays.Add "Magaña Elizondo Matilde", 144
-    GetHardcodedVacationDays.Add "Ramirez Avila Edgar Misael", 100
-    GetHardcodedVacationDays.Add "Ramirez Canales Hugo Cesar", 100
-    GetHardcodedVacationDays.Add "Borceguin Lucano Virginia", 68
-    GetHardcodedVacationDays.Add "Hernandez Rodriguez Juan Carlos", 116
-    GetHardcodedVacationDays.Add "Chavez Navarrete Cristina", 100
-    GetHardcodedVacationDays.Add "Reyes Martinez Esmeralda Rubi", 100
-    GetHardcodedVacationDays.Add "Aranda Estrada Raul Alejandro", 78
-    GetHardcodedVacationDays.Add "Ramirez Davila Ana Marilu", 84
-    GetHardcodedVacationDays.Add "Ruiz Castellanos Mario Alberto", 68
-    GetHardcodedVacationDays.Add "Guerrero Flores Jorge", 130
-    GetHardcodedVacationDays.Add "Perez Sanchez Moises Valentin", 54
-    GetHardcodedVacationDays.Add "Ramirez Davila Claudia Maribel", 42
-    GetHardcodedVacationDays.Add "Ibarra Ramirez Olga Lidia", 42
-    GetHardcodedVacationDays.Add "Lopez Campos Jessica Mayde", 40
-    GetHardcodedVacationDays.Add "Dominguez Duran Maria Guadalupe", 30
-    GetHardcodedVacationDays.Add "Perez Barajas Leticia", 26
-    GetHardcodedVacationDays.Add "Sanchez Ista Jose Manuel", 12
-    GetHardcodedVacationDays.Add "Almaguer Balderrama Sandra Violeta", 12
-    GetHardcodedVacationDays.Add "Arciga Cibrian Margarita", 12
-    GetHardcodedVacationDays.Add "Gallegos Morales Wendy Carolina", 12
-    GetHardcodedVacationDays.Add "Saleme Valdes Jetro", 12
-    GetHardcodedVacationDays.Add "Gutierrez Gomez Yadira Alejandra", 12
-    GetHardcodedVacationDays.Add "Michel Juárez Alexis Abraham", 0
-    GetHardcodedVacationDays.Add "Garcia Bejines Lucia Guadalupe", 0
-    GetHardcodedVacationDays.Add "Flores Sanchez Francisco Josiel", 0
-    GetHardcodedVacationDays.Add "Lujano Hernandez Brenda Guadalupe", 0
-    GetHardcodedVacationDays.Add "López Rapeta Efraín Junior", 0
-    GetHardcodedVacationDays.Add "Borja Montiel Rubi Guadalupe", 0
-End Function
-
 Private Sub ActualizarControlVacaciones(wsVac As Worksheet, histArr As Variant)
     ' --- CORRECCIÓN DE BUG DE ÁMBITO (SCOPE) ---
     Dim i As Long, r As Long
@@ -1788,8 +1753,35 @@ Private Sub ActualizarControlVacaciones(wsVac As Worksheet, histArr As Variant)
         If IsDate(wsVac.Cells(r, g_Config("VAC_COL_FECHA_ANTIG")).Value) Then
             fechaAntig = CDate(wsVac.Cells(r, g_Config("VAC_COL_FECHA_ANTIG")).Value)
 
-            ' A. Actualizar Vacaciones por Derecho (Col E en tu captura)
-            wsVac.Cells(r, g_Config("VAC_COL_DERECHO")).Value = CalcularDiasDerecho(fechaAntig, nombre)
+            ' --- INICIO NUEVA LÓGICA DE ACTUALIZACIÓN ANUAL ---
+            ' Calcular antigüedad actual
+            Dim aniosCumplidos As Long
+            aniosCumplidos = DateDiff("yyyy", fechaAntig, Date)
+            If DateSerial(Year(Date), Month(fechaAntig), Day(fechaAntig)) > Date Then
+                aniosCumplidos = aniosCumplidos - 1
+            End If
+
+            If aniosCumplidos > 0 Then
+                ' Leer la última antigüedad registrada
+                Dim antigRegistrada As Long
+                antigRegistrada = CLng(ToDouble(wsVac.Cells(r, g_Config("VAC_COL_ANTIG_ACTUALIZADA")).Value))
+
+                ' Si ha cumplido más años de los que tiene registrados...
+                If aniosCumplidos > antigRegistrada Then
+                    ' ...calcular los días a añadir para el nuevo año y sumarlos
+                    Dim diasParaAgregar As Long
+                    diasParaAgregar = DiasPorAnioCumplido(aniosCumplidos)
+
+                    Dim diasActuales As Long
+                    diasActuales = CLng(ToDouble(wsVac.Cells(r, g_Config("VAC_COL_DERECHO")).Value))
+
+                    wsVac.Cells(r, g_Config("VAC_COL_DERECHO")).Value = diasActuales + diasParaAgregar
+
+                    ' ...y actualizar el registro para no volver a sumar en el futuro
+                    wsVac.Cells(r, g_Config("VAC_COL_ANTIG_ACTUALIZADA")).Value = aniosCumplidos
+                End If
+            End If
+            ' --- FIN NUEVA LÓGICA ---
 
             ' B. Actualizar Vacaciones Disfrutadas (Col D en tu captura)
             If Len(noNom) > 0 Then empKey = noNom Else empKey = nombre
@@ -1818,67 +1810,34 @@ Private Sub ActualizarControlVacaciones(wsVac As Worksheet, histArr As Variant)
     Next r
 End Sub
 
-Private Function CalcularDiasDerecho(fechaAntig As Date, nombreEmp As String) As Long
-    ' LÓGICA NUEVA: Usar valores fijos para empleados existentes.
-    Dim dictHardcoded As Object
-    Set dictHardcoded = GetHardcodedVacationDays()
-
-    Dim cleanName As String
-    cleanName = nombreEmp
-    If Left(cleanName, 2) = "R-" Then
-        cleanName = Mid(cleanName, 3)
-    End If
-
-    If dictHardcoded.Exists(cleanName) Then
-        CalcularDiasDerecho = dictHardcoded(cleanName)
-        Exit Function
-    End If
-
-    ' SI NO SE ENCUENTRA, SE APLICA LA LÓGICA POR DEFECTO (PARA NUEVOS EMPLEADOS)
-
-    If fechaAntig > Date Then
-        CalcularDiasDerecho = 0
-        Exit Function
-    End If
-
-    Dim anios As Long: anios = DateDiff("yyyy", fechaAntig, Date)
-    ' Ajuste por si aún no cumple el aniversario este año
-    If DateSerial(Year(Date), Month(fechaAntig), Day(fechaAntig)) > Date Then
-        anios = anios - 1
-    End If
-
+Private Function DiasPorAnioCumplido(ByVal anios As Long) As Long
+    ' Devuelve los días de vacaciones que corresponden a un año específico
+    ' según la ley de 2023.
     If anios <= 0 Then
-        CalcularDiasDerecho = 0
+        DiasPorAnioCumplido = 0
         Exit Function
     End If
 
-    ' --- Definición de Tablas de Vacaciones (SOLO LEY NUEVA) ---
-    Dim diasPorAnio_LeyNueva(1 To 35) As Long
-    diasPorAnio_LeyNueva(1) = 12
-    diasPorAnio_LeyNueva(2) = 14
-    diasPorAnio_LeyNueva(3) = 16
-    diasPorAnio_LeyNueva(4) = 18
-    diasPorAnio_LeyNueva(5) = 20
+    ' Tabla LFT 2023 (Días por año)
+    Dim diasPorAnio(1 To 35) As Long
+    diasPorAnio(1) = 12
+    diasPorAnio(2) = 14
+    diasPorAnio(3) = 16
+    diasPorAnio(4) = 18
+    diasPorAnio(5) = 20
     Dim i As Long
-    For i = 6 To 10: diasPorAnio_LeyNueva(i) = 22: Next i
-    For i = 11 To 15: diasPorAnio_LeyNueva(i) = 24: Next i
-    For i = 16 To 20: diasPorAnio_LeyNueva(i) = 26: Next i
-    For i = 21 To 25: diasPorAnio_LeyNueva(i) = 28: Next i
-    For i = 26 To 30: diasPorAnio_LeyNueva(i) = 30: Next i
-    For i = 31 To 35: diasPorAnio_LeyNueva(i) = 32: Next i
+    For i = 6 To 10: diasPorAnio(i) = 22: Next i
+    For i = 11 To 15: diasPorAnio(i) = 24: Next i
+    For i = 16 To 20: diasPorAnio(i) = 26: Next i
+    For i = 21 To 25: diasPorAnio(i) = 28: Next i
+    For i = 26 To 30: diasPorAnio(i) = 30: Next i
+    For i = 31 To 35: diasPorAnio(i) = 32: Next i
 
-    Dim totalAcumulado As Long: totalAcumulado = 0
-
-    ' --- Lógica de Cálculo para Nuevos Empleados (Ley 2023) ---
-    For i = 1 To anios
-        If i > 35 Then
-            totalAcumulado = totalAcumulado + 32
-        Else
-            totalAcumulado = totalAcumulado + diasPorAnio_LeyNueva(i)
-        End If
-    Next i
-
-    CalcularDiasDerecho = totalAcumulado
+    If anios > 35 Then
+        DiasPorAnioCumplido = 32 ' Máximo LFT
+    Else
+        DiasPorAnioCumplido = diasPorAnio(anios)
+    End If
 End Function
 
 Private Function ColLetra(colNum As Long) As String
