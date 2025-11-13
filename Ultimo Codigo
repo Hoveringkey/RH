@@ -795,7 +795,7 @@ Private Sub ReadTable(ws As Worksheet, tableName As String, ParamArray keysAndVa
             k = CStr(lo.DataBodyRange(r, idxKey).Value)
             v = lo.DataBodyRange(r, idxVal).Value
             'Guardar la clave de columna asociada a su hoja
-            If g_Config.Exists(hoja) And Len(Trim(k)) > 0 Then
+            If Len(Trim(k)) > 0 Then
                 If Not g_Config.Exists(k) Then
                     g_Config.Add k, v
                 End If
