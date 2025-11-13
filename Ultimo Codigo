@@ -808,9 +808,10 @@ End Sub
 Private Sub ReadIncidenceTable(ws As Worksheet, tableName As String)
     Dim lo As ListObject
     Dim idxTipo As Long, idxAbrev As Long, idxColor As Long, idxBono As Long, idxBonoNocturno As Long, idxIncentivo As Long
+    Dim tieneColIncentivo As Boolean
     Dim r As Long
     Dim props As Object
-    Dim abrev As String, key As String
+    Dim abrev As String, key As String, aplicaIncentivo As String
 
     On Error Resume Next
     Set lo = ws.ListObjects(tableName)
@@ -827,10 +828,11 @@ Private Sub ReadIncidenceTable(ws As Worksheet, tableName As String)
     idxBono = GetColIndex(lo, "AplicaBonoMensual")
     idxBonoNocturno = GetColIndex(lo, "AplicaBonoNocturno")
     idxIncentivo = 0
-    
+
     On Error Resume Next
     idxIncentivo = GetColIndex(lo, "AplicaIncentivo")
     On Error GoTo 0
+    tieneColIncentivo = (idxIncentivo <> 0)
     
     If idxTipo = 0 Then
         Err.Raise vbObjectError, "ReadIncidenceTable", "El encabezado 'Tipo_Registrado' no se encontró en " & tableName & "."
@@ -852,20 +854,21 @@ Private Sub ReadIncidenceTable(ws As Worksheet, tableName As String)
         Err.Raise vbObjectError, "ReadIncidenceTable", "El encabezado 'AplicaBonoNocturno' no se encontró en " & tableName & "."
         Exit Sub
     End If
-    If idxIncentivo = 0 Then
-        Err.Raise vbObjectError, "ReadIncidenceTable", "El encabezado 'AplicaIncentivo' no se encontró en " & tableName & "."
-        Exit Sub
-    End If
-
     For r = 1 To lo.ListRows.count
         Set props = CreateObject("Scripting.Dictionary")
         abrev = UCase$(Trim$(CStr(lo.DataBodyRange(r, idxAbrev).Value)))
-        
+
         props.Add "Abreviatura_Reporte", abrev
         props.Add "ColorRGB", CStr(lo.DataBodyRange(r, idxColor).Value)
         props.Add "AplicaBonoMensual", UCase$(Trim$(CStr(lo.DataBodyRange(r, idxBono).Value)))
         props.Add "AplicaBonoNocturno", UCase$(Trim$(CStr(lo.DataBodyRange(r, idxBonoNocturno).Value)))
-        props.Add "AplicaIncentivo", UCase$(Trim$(CStr(lo.DataBodyRange(r, idxIncentivo).Value)))
+        If tieneColIncentivo Then
+            aplicaIncentivo = UCase$(Trim$(CStr(lo.DataBodyRange(r, idxIncentivo).Value)))
+            If Len(aplicaIncentivo) = 0 Then aplicaIncentivo = "NO"
+        Else
+            aplicaIncentivo = "NO"
+        End If
+        props.Add "AplicaIncentivo", aplicaIncentivo
         
         key = CleanIncidenceKey(CStr(lo.DataBodyRange(r, idxTipo).Value))
         If Len(key) > 0 And Not g_Config.Exists(key) Then
