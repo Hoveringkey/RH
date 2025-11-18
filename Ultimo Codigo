@@ -233,12 +233,18 @@ Public Sub GenerarReporteSemanal()
         End If
 
         ' --- INICIO CÁLCULO INCENTIVO ---
-        If incentivoBase > 0 Then
-            Dim valorDiarioIncentivo As Double
-            If diasLaborables > 0 Then valorDiarioIncentivo = incentivoBase / diasLaborables Else valorDiarioIncentivo = 0
-            Dim ausenciasIncentivo As Long: ausenciasIncentivo = ContarAusenciasParaIncentivo(wsRep, repFila)
-            Dim incentivoCalc As Double: incentivoCalc = incentivoBase - (valorDiarioIncentivo * ausenciasIncentivo)
-            If incentivoCalc > 0 Then wsRep.Cells(repFila, g_Config("COL_INCENT")).Value = incentivoCalc Else wsRep.Cells(repFila, g_Config("COL_INCENT")).ClearContents
+        Dim incentivosRegistrados As Double
+        incentivosRegistrados = CalcularIncentivosSemana(incArr, noNomKey, nombreEmp, mondayDate, sundayDate)
+
+        Dim incentivoTotal As Double
+        incentivoTotal = incentivoBase + incentivosRegistrados
+
+        If incentivoTotal > 0 Then
+            wsRep.Cells(repFila, g_Config("COL_INCENT")).Value = incentivoTotal
+        Else
+            ' Si ya había un incentivo base pero el total es 0 (raro, pero posible),
+            ' asegurarse de limpiar la celda que se llenó previamente.
+            wsRep.Cells(repFila, g_Config("COL_INCENT")).ClearContents
         End If
         ' --- FIN CÁLCULO INCENTIVO ---
 
@@ -460,6 +466,69 @@ Private Function CalcularHorasExtraSemana(incArr As Variant, ByVal noNomKey As S
         End If
     Next i
     CalcularHorasExtraSemana = sumhx
+End Function
+
+' --- FUNCIÓN NUEVA ---
+' Calcula el total de incentivos monetarios para la semana (Lunes a Domingo)
+Private Function CalcularIncentivosSemana(incArr As Variant, ByVal noNomKey As String, ByVal nombreEmp As String, ByVal mondayDate As Date, ByVal sundayDate As Date) As Double
+    Dim i As Long, f As Date
+    Dim sumIncentivos As Double: sumIncentivos = 0
+    If IsEmpty(incArr) Then
+        CalcularIncentivosSemana = 0
+        Exit Function
+    End If
+
+    ' --- INICIO FIX RANGEDATOS 1 FILA ---
+    Dim numDims As Integer
+    On Error Resume Next
+    numDims = UBound(incArr, 2)
+    On Error GoTo 0
+
+    If numDims = 0 And LBound(incArr, 1) = 1 And UBound(incArr, 1) >= g_Config("INC_COL_TIPO") Then
+        ' Si es un array 1D (una fila), re-dimensionar a 2D (1 fila, N columnas)
+        Dim tempArr As Variant
+        ReDim tempArr(1 To 1, LBound(incArr, 1) To UBound(incArr, 1))
+        For i = LBound(incArr, 1) To UBound(incArr, 1)
+            tempArr(1, i) = incArr(i)
+        Next i
+        incArr = tempArr
+    ElseIf numDims = 0 Then
+        ' El array es 1D pero no es válido
+        CalcularIncentivosSemana = 0
+        Exit Function
+    End If
+    ' --- FIN FIX ---
+
+    For i = LBound(incArr, 1) To UBound(incArr, 1)
+        Dim incNominaKey As String, incNombre As String, esMatch As Boolean
+
+        incNominaKey = NomKey(incArr(i, g_Config("INC_COL_NOM")))
+        incNombre = Trim(CStr(incArr(i, g_Config("INC_COL_NOMBRE"))))
+
+        esMatch = False
+        If Len(noNomKey) > 0 And noNomKey = incNominaKey Then
+            esMatch = True
+        ElseIf Len(nombreEmp) > 0 And StrComp(nombreEmp, incNombre, vbTextCompare) = 0 Then
+            If Len(noNomKey) = 0 Or Len(incNominaKey) = 0 Then
+                esMatch = True
+            End If
+        End If
+
+        If esMatch Then
+            If IsDate(incArr(i, g_Config("INC_COL_FECHA"))) Then
+                f = CDate(incArr(i, g_Config("INC_COL_FECHA")))
+
+                ' Suma si la fecha está DENTRO de la semana (L-D)
+                If CLng(DateValue(f)) >= CLng(mondayDate) And CLng(DateValue(f)) <= CLng(sundayDate) Then
+                    ' Comprobar si el tipo de incidencia es "Incentivo"
+                    If StrComp(CStr(incArr(i, g_Config("INC_COL_TIPO"))), "Incentivo", vbTextCompare) = 0 Then
+                        sumIncentivos = sumIncentivos + ToDouble(incArr(i, g_Config("INC_COL_CANT")))
+                    End If
+                End If
+            End If
+        End If
+    Next i
+    CalcularIncentivosSemana = sumIncentivos
 End Function
 
 
